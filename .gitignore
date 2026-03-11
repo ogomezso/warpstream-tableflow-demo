@@ -1,0 +1,35 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform.lock.hcl
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Generated files with sensitive data
+environment/warpstream/warpstream-agent.yaml
+environment/warpstream/warpstream-agent.yaml.backup.*
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Platform-specific binaries
+darwin_arm64/

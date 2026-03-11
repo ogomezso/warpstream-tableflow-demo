@@ -1,0 +1,40 @@
+replicas: 1
+
+autoscaling:
+  enabled: false
+
+serviceAccount:
+  create: true
+  name: warpstream-agent
+
+# Internal object storage used by the Tableflow virtual cluster
+config:
+  bucketURL: azblob://<TABLEFLOW_CONTAINER>
+  virtualClusterID: <TABLEFLOW_VIRTUAL_CLUSTER_ID>
+  region: <TABLEFLOW_REGION>
+  agentKey: <WARPSTREAM_AGENT_KEY>
+
+extraEnv:
+  - name: WARPSTREAM_DEFAULT_VIRTUAL_CLUSTER_ID
+    value: "<TABLEFLOW_VIRTUAL_CLUSTER_ID>"
+
+  - name: WARPSTREAM_REGION
+    value: "<TABLEFLOW_REGION>"
+
+  # Azure auth (for a quick PoC using access keys; prefer workload identity in real env)
+  - name: AZURE_STORAGE_ACCOUNT
+    value: "<AZURE_STORAGE_ACCOUNT>"
+  - name: AZURE_STORAGE_KEY
+    valueFrom:
+      secretKeyRef:
+        name: azure-storage-credentials
+        key: account-key
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: azure-storage-credentials
+  namespace: warpstream
+type: Opaque
+stringData:
+  account-key: "<AZURE_STORAGE_KEY>"
