@@ -112,16 +112,40 @@ ensure_required_env_vars() {
 }
 
 ensure_azure_login() {
-  if az account show >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ Azure CLI already authenticated${NC}"
+  local needs_login=false
+
+  # Check if authenticated and token is valid
+  if ! az account show >/dev/null 2>&1; then
+    needs_login=true
   else
-    echo -e "${YELLOW}Azure CLI is not authenticated. Starting az login...${NC}"
-    az login >/dev/null
+    # Verify token is actually working by trying to list subscriptions
+    if ! az account list >/dev/null 2>&1; then
+      echo -e "${YELLOW}Azure token appears expired. Re-authenticating...${NC}"
+      needs_login=true
+    fi
+  fi
+
+  if [ "$needs_login" = true ]; then
+    echo -e "${YELLOW}Azure CLI authentication required. Logging out and re-authenticating...${NC}"
+    az logout >/dev/null 2>&1 || true
+
+    # Build login command with optional tenant and scope
+    local login_cmd="az login"
+    if [ -n "${AZURE_TENANT_ID:-}" ]; then
+      login_cmd="$login_cmd --tenant \"$AZURE_TENANT_ID\""
+    fi
+    if [ -n "${AZURE_LOGIN_SCOPE:-}" ]; then
+      login_cmd="$login_cmd --scope \"$AZURE_LOGIN_SCOPE\""
+    fi
+
+    eval "$login_cmd"
 
     if ! az account show >/dev/null 2>&1; then
       echo -e "${RED}Error: Azure login failed. Run 'az login' and retry.${NC}"
       exit 1
     fi
+  else
+    echo -e "${GREEN}✓ Azure CLI already authenticated${NC}"
   fi
 
   select_azure_subscription

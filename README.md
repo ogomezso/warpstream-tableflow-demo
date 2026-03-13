@@ -59,6 +59,8 @@ This demo deploys a complete environment for WarpStream Tableflow integration wi
 |----------|---------|-------------|
 | `WARPSTREAM_AGENT_KEY` | (from Terraform) | Override for the WarpStream agent key. Must start with `aki_`. |
 | `AZURE_SUBSCRIPTION_ID` | (interactive) | Azure subscription ID. If not set, you'll be prompted to select one. |
+| `AZURE_TENANT_ID` | (unset) | Azure tenant ID for authentication. Only set if required by your organization. |
+| `AZURE_LOGIN_SCOPE` | (unset) | Azure login scope. Set to `https://graph.microsoft.com/.default` if required by conditional access policies. |
 | `TABLEFLOW_REGION` | `eastus` | Azure region for the WarpStream Tableflow cluster. |
 | `CONFLUENT_NAMESPACE` | `confluent` | Kubernetes namespace for Confluent Platform resources. |
 | `WARPSTREAM_NAMESPACE` | `warpstream` | Kubernetes namespace for WarpStream resources. |
@@ -130,8 +132,9 @@ export AZURE_SUBSCRIPTION_ID='your_azure_subscription_id'
 
 1. **CFK Operator Installation** - Installs Confluent for Kubernetes operator if not present
 2. **Confluent Platform Deployment** - Deploys Kafka, Schema Registry, Connect, and Control Center
-3. **Terraform Resources** - Provisions Azure storage and WarpStream Tableflow cluster
-4. **WarpStream Agent Deployment** - Renders agent configuration and deploys via Helm
+3. **Azure Authentication** - Automatically handles Azure login and token refresh (including expired tokens)
+4. **Terraform Resources** - Provisions Azure storage and WarpStream Tableflow cluster
+5. **WarpStream Agent Deployment** - Renders agent configuration and deploys via Helm
 
 ### Verifying the Deployment
 
@@ -199,8 +202,17 @@ warpstream-tableflow-demo/
 
 ### Azure Authentication Issues
 
+The script automatically handles Azure authentication, including expired refresh tokens. If you encounter authentication issues:
+
+**Automatic Token Refresh**
+The script detects and automatically re-authenticates when your Azure token expires due to conditional access policies (e.g., 12-hour session limits). No manual intervention required.
+
+**Manual Authentication**
+If needed, you can manually re-authenticate:
+
 ```bash
-# Re-authenticate with Azure
+# Standard re-authentication
+az logout
 az login
 
 # List available subscriptions
@@ -208,6 +220,20 @@ az account list --output table
 
 # Set specific subscription
 az account set --subscription "<subscription-id>"
+```
+
+**Organization-Specific Requirements**
+If your organization requires a specific tenant or scope for authentication:
+
+```bash
+# Set tenant ID (if required)
+export AZURE_TENANT_ID="your-tenant-id"
+
+# Set login scope (if required by conditional access policies)
+export AZURE_LOGIN_SCOPE="https://graph.microsoft.com/.default"
+
+# Run the demo
+./run_demo.sh
 ```
 
 ### WarpStream Agent Key Issues

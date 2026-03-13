@@ -20,6 +20,7 @@ environment/warpstream/warpstream-agent.yaml.backup.*
 # IDE and editor files
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 *~
