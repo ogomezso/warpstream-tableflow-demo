@@ -2,7 +2,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 3.0"
+      version = "~> 4.66"
     }
   }
 }
@@ -39,12 +39,30 @@ variable "container_name" {
   default     = "tableflow"
 }
 
+variable "create_storage_account" {
+  description = "Whether to create a new storage account (false to use existing)"
+  type        = bool
+  default     = true
+}
+
+########################
+# Data Sources
+########################
+
+# Try to fetch existing storage account
+data "azurerm_storage_account" "existing" {
+  count               = var.create_storage_account ? 0 : 1
+  name                = var.storage_account_name
+  resource_group_name = var.resource_group_name
+}
+
 ########################
 # Resources
 ########################
 
 
 resource "azurerm_storage_account" "ws" {
+  count                = var.create_storage_account ? 1 : 0
   name                     = var.storage_account_name
   resource_group_name      = var.resource_group_name
   location                 = var.location
@@ -64,9 +82,16 @@ resource "azurerm_storage_account" "ws" {
   }
 }
 
+# Local to reference the storage account (whether existing or newly created)
+locals {
+  storage_account_id   = var.create_storage_account ? azurerm_storage_account.ws[0].id : data.azurerm_storage_account.existing[0].id
+  storage_account_name = var.create_storage_account ? azurerm_storage_account.ws[0].name : data.azurerm_storage_account.existing[0].name
+  storage_account_key  = var.create_storage_account ? azurerm_storage_account.ws[0].primary_access_key : data.azurerm_storage_account.existing[0].primary_access_key
+}
+
 resource "azurerm_storage_container" "tableflow" {
   name                  = var.container_name
-  storage_account_name  = azurerm_storage_account.ws.name
+  storage_account_id    = local.storage_account_id
   container_access_type = "private"
 }
 
@@ -75,12 +100,12 @@ resource "azurerm_storage_container" "tableflow" {
 ########################
 
 output "storage_account_name" {
-  value       = azurerm_storage_account.ws.name
+  value       = local.storage_account_name
   description = "Use as AZURE_STORAGE_ACCOUNT in the WarpStream Agents"
 }
 
 output "storage_account_primary_access_key" {
-  value       = azurerm_storage_account.ws.primary_access_key
+  value       = local.storage_account_key
   description = "Use as AZURE_STORAGE_KEY in the WarpStream Agents"
   sensitive   = true
 }

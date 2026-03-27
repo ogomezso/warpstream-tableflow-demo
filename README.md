@@ -42,8 +42,20 @@ This demo deploys a complete environment for WarpStream Tableflow integration wi
 ### Accounts & Access
 
 - **Kubernetes cluster** - Access to a running Kubernetes cluster
-- **WarpStream account** - Account API key for Terraform provider authentication
+- **WarpStream account** - Sign up at [console.warpstream.com](https://console.warpstream.com)
 - **Azure subscription** - Active Azure subscription with permissions to create storage resources
+
+### Obtaining the WarpStream Deploy API Key
+
+The `WARPSTREAM_DEPLOY_API_KEY` is required for Terraform to provision WarpStream resources. To obtain it:
+
+1. Log in to the [WarpStream Console](https://console.warpstream.com)
+2. Navigate to **Settings** > **API Keys**
+3. Click **Create API Key**
+4. Select **Account API Key** (not Agent Key)
+5. Copy the generated key (it will NOT start with `aki_`)
+
+**Important:** Do not confuse this with an Agent Key (`aki_*`). The deploy API key is used for Terraform provider authentication, while agent keys are used by WarpStream agents to connect to clusters.
 
 ## Environment Variables
 
@@ -125,7 +137,7 @@ export WARPSTREAM_DEPLOY_API_KEY='your_warpstream_account_api_key'
 export AZURE_SUBSCRIPTION_ID='your_azure_subscription_id'
 
 # Run the demo
-./run_demo.sh
+./demo-startup.sh
 ```
 
 ### What the Script Does
@@ -158,7 +170,7 @@ kubectl port-forward svc/controlcenter-ng 9021:9021 -n confluent
 export WARPSTREAM_DEPLOY_API_KEY='your_warpstream_account_api_key'
 
 # Run cleanup
-./demo_clean-up.sh
+./demo-cleanup.sh
 ```
 
 ### What Gets Removed
@@ -184,8 +196,8 @@ export WARPSTREAM_DEPLOY_API_KEY='your_warpstream_account_api_key'
 warpstream-tableflow-demo/
 ├── .gitignore                         # Git ignore (Terraform state, secrets)
 ├── README.md                          # This file
-├── run_demo.sh                        # Main demo setup script
-├── demo_clean-up.sh                   # Cleanup script
+├── demo-startup.sh                    # Main demo setup script
+├── demo-cleanup.sh                    # Cleanup script
 └── environment/
     ├── azure/
     │   └── main.tf                    # Azure storage resources
@@ -195,7 +207,7 @@ warpstream-tableflow-demo/
         ├── cluster/
         │   └── main.tf                # WarpStream Tableflow cluster
         ├── warpstream-agent-template.yaml  # Agent Helm values template
-        └── warpstream-agent.yaml      # Generated agent config (created by run_demo.sh)
+        └── warpstream-agent.yaml      # Generated agent config (created by demo-startup.sh)
 ```
 
 ## Troubleshooting
@@ -233,7 +245,7 @@ export AZURE_TENANT_ID="your-tenant-id"
 export AZURE_LOGIN_SCOPE="https://graph.microsoft.com/.default"
 
 # Run the demo
-./run_demo.sh
+./demo-startup.sh
 ```
 
 ### WarpStream Agent Key Issues

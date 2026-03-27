@@ -14,8 +14,9 @@ override.tf.json
 terraform.rc
 
 # Generated files with sensitive data
-environment/warpstream/warpstream-agent.yaml
-environment/warpstream/warpstream-agent.yaml.backup.*
+environment/warpstream/agent/warpstream-agent.yaml
+environment/warpstream/agent/warpstream-agent.yaml.backup.*
+environment/warpstream/tableflow-pipeline/orders-tableflow-pipeline.yaml
 
 # IDE and editor files
 .idea/

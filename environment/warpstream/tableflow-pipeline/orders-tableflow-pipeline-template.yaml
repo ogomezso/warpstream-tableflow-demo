@@ -1,0 +1,26 @@
+source_clusters:
+  - name: cp_cluster
+    bootstrap_brokers:
+      - hostname: <CP_BROKER_DNS>
+        port: 9092
+
+tables:
+  - source_cluster_name: cp_cluster
+    source_topic: datagen-orders
+    source_format: avro
+    schema_mode: inline
+    schema:
+      fields:
+        - { name: ordertime, type: long, id: 1 }
+        - { name: orderid, type: int, id: 2 }
+        - { name: itemid, type: string, id: 3 }
+        - { name: orderunits, type: double, id: 4 }
+        - name: address
+          id: 5
+          type: struct
+          fields:
+            - { name: city, type: string, id: 6 }
+            - { name: state, type: string, id: 7 }
+            - { name: zipcode, type: long, id: 8 }
+
+destination_bucket_url: <BUCKET_URL>
