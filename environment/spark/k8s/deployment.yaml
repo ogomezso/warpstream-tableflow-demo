@@ -1,0 +1,74 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-sql
+  namespace: spark
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark
+      component: sql
+  template:
+    metadata:
+      labels:
+        app: spark
+        component: sql
+    spec:
+      initContainers:
+      - name: download-iceberg-jars
+        image: apache/spark:3.5.1-scala2.12-java17-python3-ubuntu
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            set -e
+            echo "Copying original Spark JARs..."
+            cp -r /opt/spark/jars/* /spark-libs/
+            cd /spark-libs
+            echo "Downloading Iceberg and Azure libraries..."
+            wget -q https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/1.5.0/iceberg-spark-runtime-3.5_2.12-1.5.0.jar
+            wget -q https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-azure/3.3.6/hadoop-azure-3.3.6.jar
+            wget -q https://repo1.maven.org/maven2/com/azure/azure-storage-blob/12.25.1/azure-storage-blob-12.25.1.jar
+            wget -q https://repo1.maven.org/maven2/com/azure/azure-storage-file-datalake/12.19.0/azure-storage-file-datalake-12.19.0.jar
+            wget -q https://repo1.maven.org/maven2/com/azure/azure-core/1.49.0/azure-core-1.49.0.jar
+            wget -q https://repo1.maven.org/maven2/com/azure/azure-core-http-netty/1.15.0/azure-core-http-netty-1.15.0.jar
+            wget -q https://repo1.maven.org/maven2/org/reactivestreams/reactive-streams/1.0.4/reactive-streams-1.0.4.jar
+            wget -q https://repo1.maven.org/maven2/io/projectreactor/netty/reactor-netty-http/1.1.18/reactor-netty-http-1.1.18.jar
+            wget -q https://repo1.maven.org/maven2/io/projectreactor/netty/reactor-netty-core/1.1.18/reactor-netty-core-1.1.18.jar
+            wget -q https://repo1.maven.org/maven2/io/projectreactor/reactor-core/3.6.5/reactor-core-3.6.5.jar
+            echo "Downloads complete! Total JARs: $(ls -1 | wc -l)"
+        volumeMounts:
+        - name: spark-jars
+          mountPath: /spark-libs
+      containers:
+      - name: spark
+        image: apache/spark:3.5.1-scala2.12-java17-python3-ubuntu
+        command: ["/bin/bash", "-c", "--"]
+        args: ["tail -f /dev/null"]
+        env:
+        - name: AZURE_STORAGE_ACCOUNT
+          value: "AZURE_STORAGE_ACCOUNT_PLACEHOLDER"
+        - name: AZURE_STORAGE_KEY
+          value: "AZURE_STORAGE_KEY_PLACEHOLDER"
+        - name: WARPSTREAM_AGENT_KEY
+          value: "WARPSTREAM_AGENT_KEY_PLACEHOLDER"
+        volumeMounts:
+        - name: spark-config
+          mountPath: /opt/spark/conf/spark-defaults.conf
+          subPath: spark-defaults.conf
+        - name: spark-jars
+          mountPath: /opt/spark/jars
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1"
+          limits:
+            memory: "4Gi"
+            cpu: "2"
+      volumes:
+      - name: spark-config
+        configMap:
+          name: spark-config
+      - name: spark-jars
+        emptyDir: {}

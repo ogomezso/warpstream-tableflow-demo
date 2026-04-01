@@ -1,33 +1,34 @@
 # WarpStream Tableflow Demo
 
-This demo deploys a complete environment for WarpStream Tableflow integration with Confluent Platform on Kubernetes, using Azure Blob Storage as the backing store.
+This demo deploys a complete environment for WarpStream Tableflow integration with Confluent Platform on Kubernetes, using Azure Data Lake Storage Gen2 (ADLS Gen2) as the backing store.
 
 ## Architecture
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│                      Kubernetes Cluster                         │
-│                                                                 │
-│  ┌─────────────────────────────┐  ┌──────────────────────────┐  │
-│  │   Confluent Platform (CFK)  │  │   WarpStream Namespace   │  │
-│  │                             │  │                          │  │
-│  │  - KRaft Controller         │  │  - WarpStream Agent      │  │
-│  │  - Kafka Broker             │  │  - Azure Credentials     │  │
-│  │  - Schema Registry          │  │                          │  │
-│  │  - Kafka Connect (datagen)  │  └──────────┬───────────────┘  │
-│  │  - Control Center Next-Gen  │             │                  │
-│  └─────────────────────────────┘             │                  │
-└──────────────────────────────────────────────┼──────────────────┘
-                                               │
-                    ┌──────────────────────────┴──────────────────────────┐
-                    │                                                     │
-          ┌─────────▼─────────┐                           ┌───────────────▼───────────────┐
-          │  WarpStream Cloud │                           │       Azure Storage           │
-          │                   │                           │                               │
-          │  - Tableflow      │                           │  - Storage Account            │
-          │    Cluster        │◄─────────────────────────►│  - Blob Container (tableflow) │
-          │  - Agent Key      │                           │                               │
-          └───────────────────┘                           └───────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Kubernetes Cluster                                  │
+│                                                                             │
+│  ┌─────────────────────────────┐  ┌──────────────────────────┐              │
+│  │   Confluent Platform (CFK)  │  │   WarpStream Namespace   │              │
+│  │                             │  │                          │              │
+│  │  - KRaft Controller         │  │  - WarpStream Agent      │              │
+│  │  - Kafka Broker             │  │  - Azure Credentials     │              │
+│  │  - Schema Registry          │  │                          │              │
+│  │  - Kafka Connect (datagen)  │  └──────────┬───────────────┘              │
+│  │  - Control Center Next-Gen  │             │                              │
+│  └─────────────────────────────┘             │                              │
+│                                               │                              │
+└───────────────────────────────────────────────┼──────────────────────────────┘
+                                                │
+                                                │
+          ┌─────────────────────────────────────▼──────────────────────────┐
+          │  WarpStream Cloud                   │    ADLS Gen2 Storage     │
+          │                                     │                          │
+          │  - Tableflow Cluster                │  - Storage Account       │
+          │  - Agent Key                        │  - Filesystem (tableflow)│
+          │  - REST Catalog                     │  - Iceberg Tables        │
+          │    (metadata only)                  │                          │
+          └─────────────────────────────────────┴──────────────────────────┘
 ```
 
 ## Prerequisites
@@ -87,8 +88,8 @@ The `WARPSTREAM_DEPLOY_API_KEY` is required for Terraform to provision WarpStrea
 
 | Resource | Name | Description |
 |----------|------|-------------|
-| Storage Account | `wsdemostore` | Azure Storage Account with LRS replication |
-| Blob Container | `tableflow` | Private container for WarpStream data |
+| Storage Account | `wsdemostore` | ADLS Gen2-enabled Storage Account with LRS replication |
+| ADLS Gen2 Filesystem | `tableflow` | Private filesystem for WarpStream data |
 
 Location: `environment/azure/main.tf`
 
@@ -144,9 +145,10 @@ export AZURE_SUBSCRIPTION_ID='your_azure_subscription_id'
 
 1. **CFK Operator Installation** - Installs Confluent for Kubernetes operator if not present
 2. **Confluent Platform Deployment** - Deploys Kafka, Schema Registry, Connect, and Control Center
-3. **Azure Authentication** - Automatically handles Azure login and token refresh (including expired tokens)
+3. **Datagen Connector** - Deploys datagen connector to produce sample orders data
 4. **Terraform Resources** - Provisions Azure storage and WarpStream Tableflow cluster
 5. **WarpStream Agent Deployment** - Renders agent configuration and deploys via Helm
+6. **Tableflow Pipeline** - Creates Tableflow pipeline to transform orders topic to Iceberg tables
 
 ### Verifying the Deployment
 
@@ -159,6 +161,30 @@ kubectl get pods -n warpstream
 
 # View Control Center (port-forward)
 kubectl port-forward svc/controlcenter-ng 9021:9021 -n confluent
+
+# Check Tableflow tables via WarpStream CLI
+kubectl exec -n warpstream deployment/warpstream-agent -- \
+  warpstream playground consume datagen-orders --follow
+```
+
+### Verifying Iceberg Tables
+
+You can verify Iceberg tables are being created using Azure CLI:
+
+```bash
+# List Iceberg tables in ADLS Gen2
+az storage fs file list \
+  --account-name wsdemostore \
+  --file-system tableflow \
+  --path "warpstream/_tableflow/" \
+  --output table
+
+# Download and inspect metadata
+az storage fs file download \
+  --account-name wsdemostore \
+  --file-system tableflow \
+  --path "warpstream/_tableflow/<table-name>/metadata/version-hint.text" \
+  --file version-hint.text
 ```
 
 ## Cleanup

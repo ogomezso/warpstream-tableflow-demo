@@ -68,6 +68,7 @@ resource "azurerm_storage_account" "ws" {
   location                 = var.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
+  is_hns_enabled           = true
 
   allow_nested_items_to_be_public = false
 
@@ -89,10 +90,9 @@ locals {
   storage_account_key  = var.create_storage_account ? azurerm_storage_account.ws[0].primary_access_key : data.azurerm_storage_account.existing[0].primary_access_key
 }
 
-resource "azurerm_storage_container" "tableflow" {
-  name                  = var.container_name
-  storage_account_id    = local.storage_account_id
-  container_access_type = "private"
+resource "azurerm_storage_data_lake_gen2_filesystem" "tableflow" {
+  name               = var.container_name
+  storage_account_id = local.storage_account_id
 }
 
 ########################
@@ -111,6 +111,6 @@ output "storage_account_primary_access_key" {
 }
 
 output "tableflow_container_name" {
-  value       = azurerm_storage_container.tableflow.name
-  description = "Use in azblob://<container> bucketURL and destination_bucket_url"
+  value       = azurerm_storage_data_lake_gen2_filesystem.tableflow.name
+  description = "Use in abfss://<container>@<account>.dfs.core.windows.net/ for ADLS Gen2"
 }

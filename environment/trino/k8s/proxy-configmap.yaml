@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: warpstream-proxy-config
+  namespace: trino
+data:
+  nginx.conf: |
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        server {
+            listen 8080;
+
+            # Health check endpoint
+            location /health {
+                access_log off;
+                return 200 "healthy\n";
+                add_header Content-Type text/plain;
+            }
+
+            # Proxy all other requests to WarpStream REST catalog
+            location / {
+                # Pass through the original request
+                proxy_pass https://metadata.default.eastus.azure.warpstream.com;
+
+                # Add WarpStream authorization header
+                proxy_set_header Authorization "Bearer ${WARPSTREAM_AGENT_KEY}";
+
+                # Preserve original headers
+                proxy_set_header Host metadata.default.eastus.azure.warpstream.com;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+
+                # SSL settings
+                proxy_ssl_server_name on;
+                proxy_ssl_protocols TLSv1.2 TLSv1.3;
+
+                # Intercept 404 responses to return proper JSON
+                proxy_intercept_errors on;
+                error_page 404 = @handle_404;
+            }
+
+            # Handle 404 errors and return JSON (Iceberg REST spec format)
+            location @handle_404 {
+                default_type application/json;
+                add_header Content-Type application/json;
+                return 404 '{"error":{"message":"Resource not found","type":"NotFoundException","code":404}}';
+            }
+        }
+    }
+
+  entrypoint.sh: |
+    #!/bin/sh
+    set -e
+    envsubst '${WARPSTREAM_AGENT_KEY}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
+    exec nginx -g 'daemon off;'

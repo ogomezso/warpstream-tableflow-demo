@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trino-config
+  namespace: trino
+data:
+  # Trino coordinator configuration
+  config.properties: |
+    coordinator=true
+    node-scheduler.include-coordinator=true
+    http-server.http.port=8080
+    discovery.uri=http://localhost:8080
+
+  # JVM configuration
+  jvm.config: |
+    -server
+    -Xmx2G
+    -XX:+UseG1GC
+    -XX:G1HeapRegionSize=32M
+    -XX:+ExplicitGCInvokesConcurrent
+    -XX:+HeapDumpOnOutOfMemoryError
+    -XX:+ExitOnOutOfMemoryError
+    -Djdk.attach.allowAttachSelf=true
+    -XX:ReservedCodeCacheSize=512M
+    -XX:PerMethodRecompilationCutoff=10000
+    -XX:PerBytecodeRecompilationCutoff=10000
+    -Djdk.nio.maxCachedBufferSize=2000000
+
+  # Node configuration
+  node.properties: |
+    node.environment=production
+    node.data-dir=/data/trino
+
+  # Iceberg catalog with REST metastore via proxy
+  iceberg.properties: |
+    connector.name=iceberg
+    iceberg.catalog.type=rest
+    iceberg.rest-catalog.uri=http://warpstream-iceberg-proxy.trino.svc.cluster.local:8080/catalogs/iceberg/vci_dl_d857ed96_bbbc_4289_8e06_75c77dcbfe12
+
+  # Core site configuration for Hadoop
+  core-site.xml: |
+    <?xml version="1.0"?>
+    <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+    <configuration>
+      <!-- Map azblob:// scheme to Azure Blob FileSystem (attempted workaround) -->
+      <property>
+        <name>fs.azblob.impl</name>
+        <value>org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem</value>
+      </property>
+      <property>
+        <name>fs.AbstractFileSystem.azblob.impl</name>
+        <value>org.apache.hadoop.fs.azurebfs.Abfs</value>
+      </property>
+      <!-- Azure Data Lake Storage Gen2 (abfs:// and abfss://) -->
+      <property>
+        <name>fs.abfs.impl</name>
+        <value>org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem</value>
+      </property>
+      <property>
+        <name>fs.AbstractFileSystem.abfs.impl</name>
+        <value>org.apache.hadoop.fs.azurebfs.Abfs</value>
+      </property>
+      <property>
+        <name>fs.abfss.impl</name>
+        <value>org.apache.hadoop.fs.azurebfs.SecureAzureBlobFileSystem</value>
+      </property>
+      <property>
+        <name>fs.AbstractFileSystem.abfss.impl</name>
+        <value>org.apache.hadoop.fs.azurebfs.Abfss</value>
+      </property>
+      <!-- Azure storage account authentication -->
+      <property>
+        <name>fs.azure.account.key.wsdemostore.dfs.core.windows.net</name>
+        <value>${env.AZURE_STORAGE_KEY}</value>
+      </property>
+      <property>
+        <name>fs.azure.account.key.wsdemostore.blob.core.windows.net</name>
+        <value>${env.AZURE_STORAGE_KEY}</value>
+      </property>
+    </configuration>

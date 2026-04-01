@@ -61,6 +61,8 @@ run_step_warpstream_agent() {
   AZURE_STORAGE_ACCOUNT="$(terraform_output_raw "$AZURE_TF_DIR" "storage_account_name")"
   AZURE_STORAGE_KEY="$(terraform_output_raw "$AZURE_TF_DIR" "storage_account_primary_access_key")"
   TABLEFLOW_CONTAINER="$(terraform_output_raw "$AZURE_TF_DIR" "tableflow_container_name")"
+  # WarpStream Tableflow uses azblob:// format for Azure (not abfs://)
+  # The WarpStream Agent SDK handles Azure authentication via AZURE_STORAGE_ACCOUNT and AZURE_STORAGE_KEY env vars
   BUCKET_URL="azblob://${TABLEFLOW_CONTAINER}"
 
   if [ -n "${WARPSTREAM_AGENT_KEY_OVERRIDE:-}" ]; then

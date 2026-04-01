@@ -1,0 +1,17 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spark-config
+  namespace: spark
+data:
+  spark-defaults.conf: |
+    spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
+    spark.sql.catalog.warpstream_iceberg=org.apache.iceberg.spark.SparkCatalog
+    spark.sql.catalog.warpstream_iceberg.type=rest
+    spark.sql.catalog.warpstream_iceberg.uri=WARPSTREAM_ICEBERG_REST_URI_PLACEHOLDER
+    spark.sql.catalog.warpstream_iceberg.header.Authorization=Bearer WARPSTREAM_AGENT_KEY_PLACEHOLDER
+    spark.sql.catalog.warpstream_iceberg.warehouse=ICEBERG_WAREHOUSE_PLACEHOLDER
+    spark.sql.catalog.warpstream_iceberg.io-impl=org.apache.iceberg.azure.adlsv2.ADLSFileIO
+    spark.hadoop.fs.azure.account.key.AZURE_STORAGE_ACCOUNT_PLACEHOLDER.blob.core.windows.net=AZURE_STORAGE_KEY_PLACEHOLDER
+    spark.hadoop.fs.azure.account.key.AZURE_STORAGE_ACCOUNT_PLACEHOLDER.dfs.core.windows.net=AZURE_STORAGE_KEY_PLACEHOLDER

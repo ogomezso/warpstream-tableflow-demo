@@ -32,6 +32,8 @@ environment/warpstream/tableflow-pipeline/orders-tableflow-pipeline.yaml
 .env.*
 *.pem
 *.key
+*-credentials.yaml
+*-secrets.yaml
 
 # Platform-specific binaries
 darwin_arm64/
