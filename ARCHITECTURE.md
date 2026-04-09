@@ -2,6 +2,82 @@
 
 This document provides detailed information about the demo's architecture, infrastructure, and project structure.
 
+## Kubernetes Cluster Options
+
+This demo can run on any Kubernetes cluster. Here are common options:
+
+### Kind (Kubernetes in Docker)
+
+**Best for:** Local development, demos, CI/CD pipelines
+
+**Advantages:**
+- ✅ Fast cluster creation (~30 seconds)
+- ✅ No cloud costs
+- ✅ Runs entirely on your laptop
+- ✅ Easy cleanup (one command)
+- ✅ Perfect for demos and testing
+
+**Resource Requirements:**
+- Minimum: 4 CPU cores, 8GB RAM
+- Recommended: 6 CPU cores, 12GB RAM
+
+**Setup:**
+```bash
+kind create cluster --name warpstream-demo --config - <<EOF
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 9021
+    hostPort: 9021
+  - containerPort: 9001
+    hostPort: 9001
+  - containerPort: 8080
+    hostPort: 8080
+EOF
+```
+
+See [QUICK_START.md](QUICK_START.md#1-kubernetes-cluster-setup-kind) for complete setup instructions.
+
+### Docker Desktop Kubernetes
+
+**Best for:** Local development on macOS/Windows
+
+**Advantages:**
+- ✅ Built into Docker Desktop
+- ✅ One-click enable
+- ✅ Native integration with host
+
+**Enable:** Docker Desktop → Preferences → Kubernetes → Enable Kubernetes
+
+### Cloud-Managed Kubernetes
+
+**Best for:** Production, team collaboration
+
+| Service | Provider | Best For |
+|---------|----------|----------|
+| **EKS** | AWS | AWS-native applications |
+| **AKS** | Azure | Azure-native applications, when using Azure ADLS Gen2 backend |
+| **GKE** | Google Cloud | Google Cloud applications |
+
+**Advantages:**
+- ✅ Production-grade reliability
+- ✅ Managed control plane
+- ✅ Native cloud integration
+- ✅ Autoscaling
+
+**Note:** When using Azure ADLS Gen2 backend, AKS provides best integration for authentication and networking.
+
+### Minikube
+
+**Best for:** Learning Kubernetes
+
+**Setup:**
+```bash
+minikube start --cpus=4 --memory=8192
+```
+
 ## Infrastructure Created
 
 ### Azure Resources (Terraform)

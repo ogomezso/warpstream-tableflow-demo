@@ -69,20 +69,17 @@ See [BACKEND_OPTIONS.md](BACKEND_OPTIONS.md) for detailed comparison.
 
 ## Prerequisites
 
-**Required:**
-- Kubernetes cluster with `kubectl` access
-- `helm` (v3+), `terraform`
-- WarpStream account ([console.warpstream.com](https://console.warpstream.com))
+**Need help with setup?** See [QUICK_START.md](QUICK_START.md#setup-prerequisites) for complete instructions including:
+- Creating a Kind Kubernetes cluster
+- Setting up a WarpStream account
+- Generating the Deploy API Key
+- Installing all required tools
 
-**Optional (Azure backend only):**
-- Azure subscription
-- `az` CLI
-
-**WarpStream Deploy API Key:**
-1. Login to [WarpStream Console](https://console.warpstream.com)
-2. Navigate to **Settings** > **API Keys**
-3. Create **Account API Key** (NOT agent key - those start with `aki_`)
-4. Copy the key for `WARPSTREAM_DEPLOY_API_KEY`
+**Quick checklist:**
+- ✅ Kubernetes cluster (Kind, Docker Desktop, EKS, AKS, GKE)
+- ✅ `kubectl`, `helm`, `terraform` installed
+- ✅ WarpStream account and Deploy API Key
+- ✅ (Optional) Azure subscription for Azure backend
 
 ## Environment Variables
 
