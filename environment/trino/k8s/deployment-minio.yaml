@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trino
+  namespace: trino
+  labels:
+    app: trino
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trino
+  template:
+    metadata:
+      labels:
+        app: trino
+    spec:
+      containers:
+      - name: trino
+        image: trinodb/trino:469
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: AWS_ACCESS_KEY_ID
+          value: "minioadmin"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "minioadmin"
+        - name: AWS_REGION
+          value: "us-east-1"
+        - name: WARPSTREAM_AGENT_KEY
+          valueFrom:
+            secretKeyRef:
+              name: warpstream-agent-apikey
+              key: apikey
+        volumeMounts:
+        - name: config
+          mountPath: /etc/trino/config.properties
+          subPath: config.properties
+        - name: config
+          mountPath: /etc/trino/jvm.config
+          subPath: jvm.config
+        - name: config
+          mountPath: /etc/trino/node.properties
+          subPath: node.properties
+        - name: config
+          mountPath: /etc/trino/catalog/iceberg.properties
+          subPath: iceberg.properties
+        - name: config
+          mountPath: /etc/hadoop/conf/core-site.xml
+          subPath: core-site.xml
+        - name: data
+          mountPath: /data/trino
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /v1/info
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /v1/info
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: trino-config
+      - name: data
+        emptyDir: {}

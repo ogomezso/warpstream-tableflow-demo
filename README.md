@@ -1,302 +1,238 @@
 # WarpStream Tableflow Demo
 
-This demo deploys a complete environment for WarpStream Tableflow integration with Confluent Platform on Kubernetes, using Azure Data Lake Storage Gen2 (ADLS Gen2) as the backing store.
+End-to-end demo of WarpStream Tableflow with Confluent Platform on Kubernetes. Supports two storage backends: Azure ADLS Gen2 (cloud) or MinIO (local). MinIO backend includes Trino query engine for SQL analytics on Iceberg tables.
+
+## Quick Links
+
+- 🚀 **[Quick Start (5 minutes)](QUICK_START.md)** - Fast setup with MinIO + Trino
+- 📖 **[Architecture Details](ARCHITECTURE.md)** - Infrastructure and system design
+- 🔧 **[Troubleshooting](TROUBLESHOOTING.md)** - Common issues and solutions
+- 💡 **[Advanced Queries](ADVANCED.md)** - SQL examples and Iceberg features
+- 🔀 **[Backend Comparison](BACKEND_OPTIONS.md)** - Azure vs MinIO details
+
+## Overview
+
+This demo deploys:
+- **Confluent Platform** (Kafka, Schema Registry, Connect, Control Center)
+- **WarpStream Tableflow** (Kafka-to-Iceberg transformation)
+- **Backend Storage** (Azure ADLS Gen2 or MinIO)
+- **Query Engine** (Trino with Iceberg connector - MinIO only)
+
+**Data Flow:**
+```
+Kafka Connect (datagen) → Kafka Topic → WarpStream Tableflow → Iceberg Tables → Trino Queries
+```
 
 ## Architecture
 
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Kubernetes Cluster                                  │
-│                                                                             │
-│  ┌─────────────────────────────┐  ┌──────────────────────────┐              │
-│  │   Confluent Platform (CFK)  │  │   WarpStream Namespace   │              │
-│  │                             │  │                          │              │
-│  │  - KRaft Controller         │  │  - WarpStream Agent      │              │
-│  │  - Kafka Broker             │  │  - Azure Credentials     │              │
-│  │  - Schema Registry          │  │                          │              │
-│  │  - Kafka Connect (datagen)  │  └──────────┬───────────────┘              │
-│  │  - Control Center Next-Gen  │             │                              │
-│  └─────────────────────────────┘             │                              │
-│                                               │                              │
-└───────────────────────────────────────────────┼──────────────────────────────┘
-                                                │
-                                                │
-          ┌─────────────────────────────────────▼──────────────────────────┐
-          │  WarpStream Cloud                   │    ADLS Gen2 Storage     │
-          │                                     │                          │
-          │  - Tableflow Cluster                │  - Storage Account       │
-          │  - Agent Key                        │  - Filesystem (tableflow)│
-          │  - REST Catalog                     │  - Iceberg Tables        │
-          │    (metadata only)                  │                          │
-          └─────────────────────────────────────┴──────────────────────────┘
+### MinIO Backend (Recommended for Development)
+
 ```
+┌────────────────────────────────────┐
+│  Kubernetes Cluster                │
+│                                    │
+│  ┌──────────────┐  ┌────────────┐ │
+│  │ WarpStream ──┼─►│   MinIO    │ │
+│  │   Agent      │  │  (S3-API)  │ │
+│  └──────────────┘  └─────▲──────┘ │
+│                          │         │
+│  ┌──────────────────────┼──────┐  │
+│  │       Trino (S3A)    │      │  │
+│  └──────────────────────┘      │  │
+└────────────────────────────────────┘
+```
+
+**Why MinIO?**
+- ✅ No cloud costs - runs in Kubernetes
+- ✅ Works with Trino/Spark (S3-compatible)
+- ✅ Built-in Console UI
+- ✅ Perfect for development and demos
+
+### Azure ADLS Gen2 Backend (Production)
+
+```
+┌──────────────┐     ┌──────────────────┐
+│  Kubernetes  │     │  Azure Cloud     │
+│              │     │                  │
+│  WarpStream ────►  │  ADLS Gen2       │
+│  Agent       │     │  Storage Account │
+└──────────────┘     └──────────────────┘
+```
+
+**Why Azure?**
+- ✅ Production-ready scalability
+- ✅ Enterprise security and compliance
+- ✅ Unlimited storage
+- ❌ No OSS query engine support (azblob:// vs s3://)
+
+See [BACKEND_OPTIONS.md](BACKEND_OPTIONS.md) for detailed comparison.
 
 ## Prerequisites
 
-### Required CLI Tools
+**Required:**
+- Kubernetes cluster with `kubectl` access
+- `helm` (v3+), `terraform`
+- WarpStream account ([console.warpstream.com](https://console.warpstream.com))
 
-- `kubectl` - Kubernetes CLI with cluster access configured
-- `helm` - Helm package manager (v3+)
-- `terraform` - Terraform CLI
-- `az` - Azure CLI
+**Optional (Azure backend only):**
+- Azure subscription
+- `az` CLI
 
-### Accounts & Access
-
-- **Kubernetes cluster** - Access to a running Kubernetes cluster
-- **WarpStream account** - Sign up at [console.warpstream.com](https://console.warpstream.com)
-- **Azure subscription** - Active Azure subscription with permissions to create storage resources
-
-### Obtaining the WarpStream Deploy API Key
-
-The `WARPSTREAM_DEPLOY_API_KEY` is required for Terraform to provision WarpStream resources. To obtain it:
-
-1. Log in to the [WarpStream Console](https://console.warpstream.com)
+**WarpStream Deploy API Key:**
+1. Login to [WarpStream Console](https://console.warpstream.com)
 2. Navigate to **Settings** > **API Keys**
-3. Click **Create API Key**
-4. Select **Account API Key** (not Agent Key)
-5. Copy the generated key (it will NOT start with `aki_`)
-
-**Important:** Do not confuse this with an Agent Key (`aki_*`). The deploy API key is used for Terraform provider authentication, while agent keys are used by WarpStream agents to connect to clusters.
+3. Create **Account API Key** (NOT agent key - those start with `aki_`)
+4. Copy the key for `WARPSTREAM_DEPLOY_API_KEY`
 
 ## Environment Variables
 
-### Required
+**Required:**
+```bash
+export WARPSTREAM_DEPLOY_API_KEY='your_api_key'
+```
 
-| Variable | Description |
-|----------|-------------|
-| `WARPSTREAM_DEPLOY_API_KEY` | WarpStream account API key for Terraform provider authentication. Must NOT start with `aki_` (that's an agent key). |
+**Optional:**
+```bash
+export TABLEFLOW_BACKEND='minio'  # or 'azure' (interactive if not set)
+export AZURE_SUBSCRIPTION_ID='...' # Azure backend only
+```
 
-### Optional
+For complete variable reference, see [BACKEND_OPTIONS.md](BACKEND_OPTIONS.md#environment-variables-reference).
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WARPSTREAM_AGENT_KEY` | (from Terraform) | Override for the WarpStream agent key. Must start with `aki_`. |
-| `AZURE_SUBSCRIPTION_ID` | (interactive) | Azure subscription ID. If not set, you'll be prompted to select one. |
-| `AZURE_TENANT_ID` | (unset) | Azure tenant ID for authentication. Only set if required by your organization. |
-| `AZURE_LOGIN_SCOPE` | (unset) | Azure login scope. Set to `https://graph.microsoft.com/.default` if required by conditional access policies. |
-| `TABLEFLOW_REGION` | `eastus` | Azure region for the WarpStream Tableflow cluster. |
-| `CONFLUENT_NAMESPACE` | `confluent` | Kubernetes namespace for Confluent Platform resources. |
-| `WARPSTREAM_NAMESPACE` | `warpstream` | Kubernetes namespace for WarpStream resources. |
-| `CFK_NAMESPACE` | `confluent` | Kubernetes namespace for CFK operator. |
-| `CFK_RELEASE` | `confluent-operator` | Helm release name for CFK operator. |
-| `WARPSTREAM_HELM_RELEASE` | `warpstream-agent` | Helm release name for WarpStream agent. |
-| `DEBUG` | `false` | Enable debug logging (`true`, `1`, `yes`, `on`). |
+## Quick Start
 
-## Infrastructure Created
-
-### Azure Resources (Terraform)
-
-| Resource | Name | Description |
-|----------|------|-------------|
-| Storage Account | `wsdemostore` | ADLS Gen2-enabled Storage Account with LRS replication |
-| ADLS Gen2 Filesystem | `tableflow` | Private filesystem for WarpStream data |
-
-Location: `environment/azure/main.tf`
-
-### WarpStream Resources (Terraform)
-
-| Resource | Name | Description |
-|----------|------|-------------|
-| Tableflow Cluster | `vcn_dl_tableflow_cluster_dev` | Dev-tier Tableflow cluster in Azure eastus |
-| Agent Key | `akn_tableflow_demo_agent_key` | Agent key for WarpStream agent authentication |
-
-Location: `environment/warpstream/cluster/main.tf`
-
-### Kubernetes Resources
-
-#### Confluent Platform (via CFK)
-
-| Component | Replicas | Description |
-|-----------|----------|-------------|
-| KRaft Controller | 1 | Kafka metadata controller (replaces ZooKeeper) |
-| Kafka Broker | 1 | Kafka broker with telemetry enabled |
-| Schema Registry | 1 | Avro/JSON/Protobuf schema management |
-| Kafka Connect | 1 | Connect cluster with datagen plugin |
-| Control Center NG | 1 | Next-gen Confluent Control Center |
-
-Location: `environment/confluent-platform/cp.yaml`
-
-#### WarpStream
-
-| Component | Description |
-|-----------|-------------|
-| WarpStream Agent | Agent deployment connecting to Tableflow cluster |
-| Service Account | `warpstream-agent` |
-| Secret | `azure-storage-credentials` - Azure storage access key |
-
-Location: `environment/warpstream/warpstream-agent-template.yaml`
-
-## Usage
-
-### Running the Demo
+### Deploy
 
 ```bash
-# Set required environment variable
-export WARPSTREAM_DEPLOY_API_KEY='your_warpstream_account_api_key'
+# Set API key
+export WARPSTREAM_DEPLOY_API_KEY='your_api_key'
 
-# Optionally set Azure subscription
-export AZURE_SUBSCRIPTION_ID='your_azure_subscription_id'
+# Option 1: MinIO backend (recommended for demos)
+export TABLEFLOW_BACKEND='minio'
+./demo-startup.sh
 
-# Run the demo
+# Option 2: Azure backend
+export TABLEFLOW_BACKEND='azure'
+./demo-startup.sh
+
+# Option 3: Interactive (will prompt for backend choice)
 ./demo-startup.sh
 ```
 
-### What the Script Does
+Deployment takes ~5-7 minutes. All UIs are automatically port-forwarded!
 
-1. **CFK Operator Installation** - Installs Confluent for Kubernetes operator if not present
-2. **Confluent Platform Deployment** - Deploys Kafka, Schema Registry, Connect, and Control Center
-3. **Datagen Connector** - Deploys datagen connector to produce sample orders data
-4. **Terraform Resources** - Provisions Azure storage and WarpStream Tableflow cluster
-5. **WarpStream Agent Deployment** - Renders agent configuration and deploys via Helm
-6. **Tableflow Pipeline** - Creates Tableflow pipeline to transform orders topic to Iceberg tables
+### Access UIs
 
-### Verifying the Deployment
+**MinIO Backend:**
+- Confluent Control Center: http://localhost:9021
+- MinIO Console: http://localhost:9001 (minioadmin/minioadmin)
+- Trino UI: http://localhost:8080
+
+**Azure Backend:**
+- Confluent Control Center: http://localhost:9021
+
+### Query Data (MinIO Backend)
 
 ```bash
-# Check Confluent Platform pods
-kubectl get pods -n confluent
+# Show tables
+kubectl exec -n trino deployment/trino -- trino --execute \
+  'SHOW TABLES FROM iceberg.default'
 
-# Check WarpStream agent
-kubectl get pods -n warpstream
+# Count orders
+kubectl exec -n trino deployment/trino -- trino --execute \
+  'SELECT COUNT(*) FROM iceberg.default."cp_cluster__datagen-orders"'
 
-# View Control Center (port-forward)
-kubectl port-forward svc/controlcenter-ng 9021:9021 -n confluent
-
-# Check Tableflow tables via WarpStream CLI
-kubectl exec -n warpstream deployment/warpstream-agent -- \
-  warpstream playground consume datagen-orders --follow
+# Interactive Trino CLI
+kubectl exec -it -n trino deployment/trino -- trino
 ```
 
-### Verifying Iceberg Tables
-
-You can verify Iceberg tables are being created using Azure CLI:
+### Time Travel Queries
 
 ```bash
-# List Iceberg tables in ADLS Gen2
-az storage fs file list \
-  --account-name wsdemostore \
-  --file-system tableflow \
-  --path "warpstream/_tableflow/" \
-  --output table
+# Interactive time travel interface
+./demo-query.sh time-travel
 
-# Download and inspect metadata
-az storage fs file download \
-  --account-name wsdemostore \
-  --file-system tableflow \
-  --path "warpstream/_tableflow/<table-name>/metadata/version-hint.text" \
-  --file version-hint.text
+# Or use menu
+./demo-query.sh
 ```
 
-## Cleanup
-
-### Running Cleanup
+### Cleanup
 
 ```bash
-# Set required environment variable
-export WARPSTREAM_DEPLOY_API_KEY='your_warpstream_account_api_key'
-
-# Run cleanup
+export WARPSTREAM_DEPLOY_API_KEY='your_api_key'
 ./demo-cleanup.sh
 ```
 
-### What Gets Removed
+## Features
 
-1. **WarpStream Kubernetes Resources** - Helm release, secrets, and namespace
-2. **WarpStream Terraform Resources** - Tableflow cluster and agent key
-3. **Azure Terraform Resources** - Storage account and container
-4. **Confluent Resources** - Confluent Platform CRs, namespace, and CFK operator
-5. **Generated Files** - Rendered manifests, Terraform state, and lock files
+### Backend Storage Options
 
-**Note:** If a namespace is still terminating after the timeout, the cleanup continues and reports a warning at the end with instructions to verify the namespace is fully deleted.
+Choose between two backends:
 
-### Cleanup Options
+**MinIO (Recommended for Development):**
+- ✅ No cloud costs or credentials
+- ✅ Built-in Console UI (<http://localhost:9001>)
+- ✅ Works with Trino query engine
+- ✅ S3-compatible for broad tool support
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CLEANUP_REMOVE_CFK_OPERATOR` | `true` | Set to `false` to keep the CFK operator installed |
-| `NAMESPACE_DELETE_TIMEOUT_SECONDS` | `30` | Timeout for namespace deletion |
+**Azure ADLS Gen2 (Production):**
+- ✅ Enterprise-grade scalability and security
+- ✅ Unlimited storage capacity
+- ❌ No OSS query engine support (URI incompatibility)
 
-## Project Structure
+See [BACKEND_OPTIONS.md](BACKEND_OPTIONS.md) for detailed comparison.
 
-```text
-warpstream-tableflow-demo/
-├── .gitignore                         # Git ignore (Terraform state, secrets)
-├── README.md                          # This file
-├── demo-startup.sh                    # Main demo setup script
-├── demo-cleanup.sh                    # Cleanup script
-└── environment/
-    ├── azure/
-    │   └── main.tf                    # Azure storage resources
-    ├── confluent-platform/
-    │   └── cp.yaml                    # Confluent Platform CRs
-    └── warpstream/
-        ├── cluster/
-        │   └── main.tf                # WarpStream Tableflow cluster
-        ├── warpstream-agent-template.yaml  # Agent Helm values template
-        └── warpstream-agent.yaml      # Generated agent config (created by demo-startup.sh)
+### Query Engine (MinIO Only)
+
+**Trino** query engine automatically deployed with MinIO backend:
+- SQL analytics on Iceberg tables
+- Interactive CLI and Web UI (<http://localhost:8080>)
+- Time travel queries via snapshot isolation
+- See [ADVANCED.md](ADVANCED.md) for query examples
+
+**Why Trino works with MinIO but not Azure:**
+MinIO uses `s3://` URIs (S3-compatible), while Azure uses `azblob://` URIs that Trino/Hadoop cannot read. See [OSS_QUERY_ENGINES.md](OSS_QUERY_ENGINES.md) for technical details.
+
+### Iceberg Time Travel
+
+Interactive tool with snapshot selection and formatted results:
+
+```bash
+./demo-query.sh time-travel
 ```
+
+**Features:**
+- Browse available snapshots with timestamps
+- Query data as it existed at any snapshot
+- Compare snapshot vs current data with statistics
+- Formatted table output for easy reading
+
+For manual queries and advanced examples, see [ADVANCED.md](ADVANCED.md#time-travel-queries).
 
 ## Troubleshooting
 
-### Azure Authentication Issues
+For detailed troubleshooting, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
-The script automatically handles Azure authentication, including expired refresh tokens. If you encounter authentication issues:
-
-**Automatic Token Refresh**
-The script detects and automatically re-authenticates when your Azure token expires due to conditional access policies (e.g., 12-hour session limits). No manual intervention required.
-
-**Manual Authentication**
-If needed, you can manually re-authenticate:
+**Common Issues:**
 
 ```bash
-# Standard re-authentication
-az logout
-az login
+# Azure authentication
+az logout && az login
 
-# List available subscriptions
-az account list --output table
+# Port-forwards died
+pkill -f "port-forward"
+./demo-startup.sh  # Will skip deployment, just restart port-forwards
 
-# Set specific subscription
-az account set --subscription "<subscription-id>"
-```
-
-**Organization-Specific Requirements**
-If your organization requires a specific tenant or scope for authentication:
-
-```bash
-# Set tenant ID (if required)
-export AZURE_TENANT_ID="your-tenant-id"
-
-# Set login scope (if required by conditional access policies)
-export AZURE_LOGIN_SCOPE="https://graph.microsoft.com/.default"
-
-# Run the demo
-./demo-startup.sh
-```
-
-### WarpStream Agent Key Issues
-
-If you see errors about the agent key format:
-
-```bash
-# Check Terraform state
-terraform -chdir=environment/warpstream/cluster state list
-
-# Inspect agent key resource
-terraform -chdir=environment/warpstream/cluster state show warpstream_agent_key.demo_agent_key
-
-# Manually override agent key if needed
-export WARPSTREAM_AGENT_KEY='aks_your_agent_key'
-```
-
-### Namespace Stuck in Terminating
-
-If a namespace is stuck in `Terminating` state:
-
-```bash
-# Check for remaining resources
+# Namespace stuck terminating
 kubectl get all -n <namespace>
-
-# Force delete if needed (use with caution)
-kubectl delete namespace <namespace> --force --grace-period=0
 ```
+
+## Project Structure
+
+See [ARCHITECTURE.md](ARCHITECTURE.md#project-structure) for complete directory tree.
+
+**Key files:**
+- `demo-startup.sh` - Main setup script
+- `demo-cleanup.sh` - Cleanup script  
+- `demo-query.sh` - Unified query interface
+- `environment/` - Kubernetes manifests and Terraform configs

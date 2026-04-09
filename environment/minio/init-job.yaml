@@ -1,0 +1,35 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init
+  namespace: minio
+spec:
+  ttlSecondsAfterFinished: 100
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: mc
+        image: quay.io/minio/mc:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          # Wait for MinIO to be ready
+          until mc alias set local http://minio:9000 minioadmin minioadmin; do
+            echo "Waiting for MinIO to be ready..."
+            sleep 5
+          done
+
+          # Create tableflow bucket if it doesn't exist
+          if ! mc ls local/tableflow >/dev/null 2>&1; then
+            echo "Creating tableflow bucket..."
+            mc mb local/tableflow
+            echo "Bucket created successfully"
+          else
+            echo "Bucket already exists"
+          fi
+
+          echo "MinIO initialization complete"

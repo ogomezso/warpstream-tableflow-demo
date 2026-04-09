@@ -3,6 +3,15 @@
 # Step 5/6 of demo cleanup
 
 delete_confluent_resources() {
+  # Check if we should remove Confluent resources
+  # CLEANUP_REMOVE_CFK_OPERATOR controls removal of both Confluent resources AND CFK operator
+  if [ "$CLEANUP_REMOVE_CFK_OPERATOR" != "true" ]; then
+    echo -e "${YELLOW}Confluent resources cleanup skipped (set CLEANUP_REMOVE_CFK_OPERATOR=true to remove them).${NC}"
+    return
+  fi
+
+  echo "Deleting Confluent Platform resources..."
+
   if [ -f "$DATAGEN_CONNECTOR_FILE" ]; then
     if kubectl delete -f "$DATAGEN_CONNECTOR_FILE" --ignore-not-found >/dev/null 2>&1; then
       echo -e "${GREEN}✓ Datagen connector deleted (if present)${NC}"
@@ -31,30 +40,28 @@ delete_confluent_resources() {
     record_failure "Confluent namespace delete failed"
   fi
 
-  if [ "$CLEANUP_REMOVE_CFK_OPERATOR" = "true" ]; then
-    if helm status "$CFK_RELEASE" -n "$CFK_NAMESPACE" >/dev/null 2>&1; then
-      if helm uninstall "$CFK_RELEASE" -n "$CFK_NAMESPACE"; then
-        echo -e "${GREEN}✓ CFK operator release removed${NC}"
-      else
-        record_failure "CFK operator uninstall failed"
-      fi
+  # Remove CFK operator
+  echo "Deleting CFK operator..."
+  if helm status "$CFK_RELEASE" -n "$CFK_NAMESPACE" >/dev/null 2>&1; then
+    if helm uninstall "$CFK_RELEASE" -n "$CFK_NAMESPACE"; then
+      echo -e "${GREEN}✓ CFK operator release removed${NC}"
     else
-      echo -e "${YELLOW}CFK operator release not found; skipping.${NC}"
+      record_failure "CFK operator uninstall failed"
     fi
+  else
+    echo -e "${YELLOW}CFK operator release not found; skipping.${NC}"
+  fi
 
-    if kubectl get namespace "$CFK_NAMESPACE" >/dev/null 2>&1; then
-      if kubectl delete namespace "$CFK_NAMESPACE" --wait=false >/dev/null 2>&1; then
-        wait_for_namespace_deletion "$CFK_NAMESPACE" || true
-      else
-        record_failure "CFK namespace delete failed"
-      fi
-    elif kubectl delete namespace "$CFK_NAMESPACE" --ignore-not-found >/dev/null 2>&1; then
-      echo -e "${YELLOW}CFK namespace '${CFK_NAMESPACE}' not found; skipping.${NC}"
+  if kubectl get namespace "$CFK_NAMESPACE" >/dev/null 2>&1; then
+    if kubectl delete namespace "$CFK_NAMESPACE" --wait=false >/dev/null 2>&1; then
+      wait_for_namespace_deletion "$CFK_NAMESPACE" || true
     else
       record_failure "CFK namespace delete failed"
     fi
+  elif kubectl delete namespace "$CFK_NAMESPACE" --ignore-not-found >/dev/null 2>&1; then
+    echo -e "${YELLOW}CFK namespace '${CFK_NAMESPACE}' not found; skipping.${NC}"
   else
-    echo -e "${YELLOW}CFK operator cleanup skipped (set CLEANUP_REMOVE_CFK_OPERATOR=true to remove it).${NC}"
+    record_failure "CFK namespace delete failed"
   fi
 }
 

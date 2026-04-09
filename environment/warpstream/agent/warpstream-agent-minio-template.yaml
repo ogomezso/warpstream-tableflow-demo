@@ -1,0 +1,52 @@
+replicas: 1
+
+autoscaling:
+  enabled: false
+
+serviceAccount:
+  create: true
+  name: warpstream-agent
+
+# Internal object storage used by the Tableflow virtual cluster
+# Note: Using simple s3://bucket URL and configuring endpoint via env vars
+# to avoid query parameters in Iceberg metadata
+config:
+  bucketURL: 's3://<MINIO_BUCKET>?region=us-east-1&s3ForcePathStyle=true&endpoint=http://minio.minio.svc.cluster.local:9000'
+  virtualClusterID: <TABLEFLOW_VIRTUAL_CLUSTER_ID>
+  region: <TABLEFLOW_REGION>
+  agentKey: <WARPSTREAM_AGENT_KEY>
+
+extraEnv:
+  - name: WARPSTREAM_DEFAULT_VIRTUAL_CLUSTER_ID
+    value: "<TABLEFLOW_VIRTUAL_CLUSTER_ID>"
+
+  - name: WARPSTREAM_REGION
+    value: "<TABLEFLOW_REGION>"
+
+  # For local/non-cloud deployments, explicitly set the availability zone
+  # This prevents errors when the agent cannot auto-detect the zone
+  - name: WARPSTREAM_AVAILABILITY_ZONE
+    value: "local-k8s-cluster"
+
+  # MinIO S3-compatible storage configuration
+  - name: AWS_ACCESS_KEY_ID
+    value: "<MINIO_ACCESS_KEY>"
+  - name: AWS_SECRET_ACCESS_KEY
+    valueFrom:
+      secretKeyRef:
+        name: minio-storage-credentials
+        key: secret-key
+  # AWS SDK configuration for S3-compatible storage
+  - name: AWS_ENDPOINT_URL_S3
+    value: "http://minio.minio.svc.cluster.local:9000"
+  - name: AWS_S3_FORCE_PATH_STYLE
+    value: "true"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: minio-storage-credentials
+  namespace: warpstream
+type: Opaque
+stringData:
+  secret-key: "<MINIO_SECRET_KEY>"

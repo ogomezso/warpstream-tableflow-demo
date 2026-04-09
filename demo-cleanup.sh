@@ -20,6 +20,7 @@ source "${SCRIPT_DIR}/scripts/common/azure.sh"
 source "${SCRIPT_DIR}/scripts/common/terraform.sh"
 source "${SCRIPT_DIR}/scripts/common/warpstream.sh"
 source "${SCRIPT_DIR}/scripts/common/kubernetes.sh"
+source "${SCRIPT_DIR}/scripts/common/port-forward.sh"
 
 ########################################
 # Configuration
@@ -41,6 +42,7 @@ WARPSTREAM_AGENT_FILE="${SCRIPT_DIR}/environment/warpstream/agent/warpstream-age
 WARPSTREAM_NAMESPACE="${WARPSTREAM_NAMESPACE:-warpstream}"
 WARPSTREAM_HELM_RELEASE="${WARPSTREAM_HELM_RELEASE:-warpstream-agent}"
 NAMESPACE_DELETE_TIMEOUT_SECONDS="${NAMESPACE_DELETE_TIMEOUT_SECONDS:-30}"
+MINIO_NAMESPACE="${MINIO_NAMESPACE:-minio}"
 
 TABLEFLOW_PIPELINE_FILE="${SCRIPT_DIR}/environment/warpstream/tableflow-pipeline/orders-tableflow-pipeline.yaml"
 
@@ -60,6 +62,8 @@ TF_DESTROY_SUCCESS_TABLEFLOW_PIPELINE=false
 source "${SCRIPT_DIR}/scripts/cleanup/01-credentials.sh"
 source "${SCRIPT_DIR}/scripts/cleanup/02-tableflow-pipeline.sh"
 source "${SCRIPT_DIR}/scripts/cleanup/03-warpstream-k8s.sh"
+source "${SCRIPT_DIR}/scripts/cleanup/03b-minio.sh"
+source "${SCRIPT_DIR}/scripts/cleanup/03c-trino.sh"
 source "${SCRIPT_DIR}/scripts/cleanup/04-terraform.sh"
 source "${SCRIPT_DIR}/scripts/cleanup/05-confluent.sh"
 source "${SCRIPT_DIR}/scripts/cleanup/06-cleanup-files.sh"
@@ -77,10 +81,19 @@ require_cmd helm
 require_cmd terraform
 require_cmd az
 
+# Stop port-forwards first
+echo -e "${YELLOW}Stopping port-forwards...${NC}"
+stop_control_center_port_forward
+stop_minio_console_port_forward
+stop_trino_ui_port_forward
+echo
+
 # Execute steps
 run_step_credentials
 run_step_destroy_tableflow_pipeline
 run_step_warpstream_k8s
+run_step_cleanup_minio
+run_step_cleanup_trino
 run_step_destroy_terraform
 run_step_confluent
 run_step_cleanup_files

@@ -27,7 +27,15 @@ deploy_warpstream_agent() {
     exit 1
   fi
 
+  # Always show bucket URL for debugging MinIO issues
+  echo "Helm values file bucket URL:"
+  grep "bucketURL" "$values_file" || echo "  [bucketURL not found in values file]"
+
   if is_debug_enabled; then
+    echo "Full Helm values file:"
+    cat "$values_file"
+    echo "---"
+
     local agent_key_in_values
     agent_key_in_values="$(awk -F': *' '/^[[:space:]]*agentKey:[[:space:]]*/ {print $2; exit}' "$values_file" | sed 's/^"//; s/"$//')"
     if [ -z "$agent_key_in_values" ]; then
@@ -56,15 +64,9 @@ deploy_warpstream_agent() {
 }
 
 run_step_warpstream_agent() {
-  echo -e "${YELLOW}[5/6] Rendering and deploying WarpStream agent...${NC}"
+  echo -e "${YELLOW}[5/7] Rendering and deploying WarpStream agent...${NC}"
 
-  AZURE_STORAGE_ACCOUNT="$(terraform_output_raw "$AZURE_TF_DIR" "storage_account_name")"
-  AZURE_STORAGE_KEY="$(terraform_output_raw "$AZURE_TF_DIR" "storage_account_primary_access_key")"
-  TABLEFLOW_CONTAINER="$(terraform_output_raw "$AZURE_TF_DIR" "tableflow_container_name")"
-  # WarpStream Tableflow uses azblob:// format for Azure (not abfs://)
-  # The WarpStream Agent SDK handles Azure authentication via AZURE_STORAGE_ACCOUNT and AZURE_STORAGE_KEY env vars
-  BUCKET_URL="azblob://${TABLEFLOW_CONTAINER}"
-
+  # Get WarpStream cluster info (common to both backends)
   if [ -n "${WARPSTREAM_AGENT_KEY_OVERRIDE:-}" ]; then
     WARPSTREAM_AGENT_KEY="${WARPSTREAM_AGENT_KEY_OVERRIDE}"
     echo -e "${YELLOW}Using WARPSTREAM_AGENT_KEY from environment override.${NC}"
@@ -73,13 +75,44 @@ run_step_warpstream_agent() {
   fi
   WARPSTREAM_VIRTUAL_CLUSTER_ID="$(terraform_output_raw "$WARPSTREAM_TF_DIR" "tableflow_virtual_cluster_id")"
 
-  if [ -z "$AZURE_STORAGE_ACCOUNT" ] || [ -z "$AZURE_STORAGE_KEY" ] || [ -z "$TABLEFLOW_CONTAINER" ] || [ -z "$WARPSTREAM_AGENT_KEY" ] || [ -z "$WARPSTREAM_VIRTUAL_CLUSTER_ID" ]; then
-    echo -e "${RED}Error: One or more terraform outputs are empty.${NC}"
+  # Configure based on selected backend
+  local backend="${TABLEFLOW_BACKEND:-azure}"
+  local template_file=""
+
+  if [ "$backend" = "minio" ]; then
+    echo -e "${GREEN}Configuring WarpStream agent for MinIO backend${NC}"
+    template_file="${SCRIPT_DIR}/environment/warpstream/agent/warpstream-agent-minio-template.yaml"
+
+    # Validate MinIO configuration
+    if [ -z "${MINIO_BUCKET:-}" ] || [ -z "${MINIO_ACCESS_KEY:-}" ] || [ -z "${MINIO_SECRET_KEY:-}" ]; then
+      echo -e "${RED}Error: MinIO configuration is incomplete.${NC}"
+      echo "Required: MINIO_BUCKET, MINIO_ACCESS_KEY, MINIO_SECRET_KEY"
+      exit 1
+    fi
+  else
+    echo -e "${GREEN}Configuring WarpStream agent for Azure ADLS Gen2 backend${NC}"
+    template_file="$WARPSTREAM_TEMPLATE_FILE"
+    AZURE_STORAGE_ACCOUNT="$(terraform_output_raw "$AZURE_TF_DIR" "storage_account_name")"
+    AZURE_STORAGE_KEY="$(terraform_output_raw "$AZURE_TF_DIR" "storage_account_primary_access_key")"
+    TABLEFLOW_CONTAINER="$(terraform_output_raw "$AZURE_TF_DIR" "tableflow_container_name")"
+
+    # Validate Azure configuration
+    if [ -z "$AZURE_STORAGE_ACCOUNT" ] || [ -z "$AZURE_STORAGE_KEY" ] || [ -z "$TABLEFLOW_CONTAINER" ]; then
+      echo -e "${RED}Error: Azure configuration is incomplete.${NC}"
+      if is_debug_enabled; then
+        echo "Debug info:"
+        echo "  AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:-[empty]}"
+        echo "  AZURE_STORAGE_KEY: ${AZURE_STORAGE_KEY:+[SET $((${#AZURE_STORAGE_KEY})) chars]}${AZURE_STORAGE_KEY:-[empty]}"
+        echo "  TABLEFLOW_CONTAINER: ${TABLEFLOW_CONTAINER:-[empty]}"
+      fi
+      exit 1
+    fi
+  fi
+
+  # Validate common WarpStream configuration
+  if [ -z "$WARPSTREAM_AGENT_KEY" ] || [ -z "$WARPSTREAM_VIRTUAL_CLUSTER_ID" ]; then
+    echo -e "${RED}Error: WarpStream configuration is incomplete.${NC}"
     if is_debug_enabled; then
-      echo "Debug info:"
-      echo "  AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:-[empty]}"
-      echo "  AZURE_STORAGE_KEY: ${AZURE_STORAGE_KEY:+[SET $((${#AZURE_STORAGE_KEY})) chars]}${AZURE_STORAGE_KEY:-[empty]}"
-      echo "  TABLEFLOW_CONTAINER: ${TABLEFLOW_CONTAINER:-[empty]}"
       echo "  WARPSTREAM_AGENT_KEY: ${WARPSTREAM_AGENT_KEY:-[empty]}"
       echo "  WARPSTREAM_VIRTUAL_CLUSTER_ID: ${WARPSTREAM_VIRTUAL_CLUSTER_ID:-[empty]}"
     fi
@@ -99,26 +132,40 @@ run_step_warpstream_agent() {
 
   if is_debug_enabled; then
     debug_log "Agent key format: ${WARPSTREAM_AGENT_KEY:0:10}...${WARPSTREAM_AGENT_KEY: -8}"
+    debug_log "Backend: ${backend}"
   fi
 
-  BACKUP_FILE="${WARPSTREAM_AGENT_FILE}.backup.$(date +%s)"
+  # Remove old generated file to ensure clean start
   if [ -f "$WARPSTREAM_AGENT_FILE" ]; then
-    cp "$WARPSTREAM_AGENT_FILE" "$BACKUP_FILE"
+    BACKUP_FILE="${WARPSTREAM_AGENT_FILE}.backup.$(date +%s)"
+    mv "$WARPSTREAM_AGENT_FILE" "$BACKUP_FILE"
+    echo "Backed up old agent config to: $BACKUP_FILE"
   fi
 
-  cp "$WARPSTREAM_TEMPLATE_FILE" "$WARPSTREAM_AGENT_FILE"
+  cp "$template_file" "$WARPSTREAM_AGENT_FILE"
 
-  sed -i '' "s|<TABLEFLOW_CONTAINER>|${TABLEFLOW_CONTAINER}|g" "$WARPSTREAM_AGENT_FILE"
+  # Replace common placeholders
   sed -i '' "s|<TABLEFLOW_VIRTUAL_CLUSTER_ID>|${WARPSTREAM_VIRTUAL_CLUSTER_ID}|g" "$WARPSTREAM_AGENT_FILE"
   sed -i '' "s|<TABLEFLOW_REGION>|${TABLEFLOW_REGION}|g" "$WARPSTREAM_AGENT_FILE"
-  sed -i '' "s|<AZURE_STORAGE_ACCOUNT>|${AZURE_STORAGE_ACCOUNT}|g" "$WARPSTREAM_AGENT_FILE"
   sed -i '' "s|<WARPSTREAM_AGENT_KEY>|${WARPSTREAM_AGENT_KEY}|g" "$WARPSTREAM_AGENT_FILE"
-  sed -i '' "s|<AZURE_STORAGE_KEY>|${AZURE_STORAGE_KEY}|g" "$WARPSTREAM_AGENT_FILE"
-  sed -i '' "s|bucketURL: .*|bucketURL: ${BUCKET_URL}|" "$WARPSTREAM_AGENT_FILE"
+
+  # Replace backend-specific placeholders
+  if [ "$backend" = "minio" ]; then
+    sed -i '' "s|<MINIO_BUCKET>|${MINIO_BUCKET}|g" "$WARPSTREAM_AGENT_FILE"
+    sed -i '' "s|<MINIO_ACCESS_KEY>|${MINIO_ACCESS_KEY}|g" "$WARPSTREAM_AGENT_FILE"
+    sed -i '' "s|<MINIO_SECRET_KEY>|${MINIO_SECRET_KEY}|g" "$WARPSTREAM_AGENT_FILE"
+  else
+    sed -i '' "s|<TABLEFLOW_CONTAINER>|${TABLEFLOW_CONTAINER}|g" "$WARPSTREAM_AGENT_FILE"
+    sed -i '' "s|<AZURE_STORAGE_ACCOUNT>|${AZURE_STORAGE_ACCOUNT}|g" "$WARPSTREAM_AGENT_FILE"
+    sed -i '' "s|<AZURE_STORAGE_KEY>|${AZURE_STORAGE_KEY}|g" "$WARPSTREAM_AGENT_FILE"
+  fi
+
+  # Note: No need to replace bucketURL line - the template already has the correct format
+  # and the placeholders have been replaced above
 
   deploy_warpstream_agent "$WARPSTREAM_AGENT_FILE"
 
-  echo -e "${GREEN}✓ WarpStream agent deployed${NC}"
+  echo -e "${GREEN}✓ WarpStream agent deployed with ${backend} backend${NC}"
   if [ -f "${BACKUP_FILE:-}" ]; then
     echo -e "${GREEN}✓ Backup created: ${BACKUP_FILE}${NC}"
   fi

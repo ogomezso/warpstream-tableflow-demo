@@ -1,6 +1,6 @@
 #!/bin/bash
 # Module: CFK Operator Installation
-# Step 1/6 of demo startup
+# Step 1/7 of demo startup
 
 cfk_installed() {
   kubectl get deployment -A -o custom-columns=NAME:.metadata.name --no-headers 2>/dev/null | grep -q '^confluent-operator$'
