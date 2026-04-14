@@ -16,12 +16,24 @@ variable "warpstream_api_key" {
   sensitive = true
 }
 
+variable "cloud_provider" {
+  description = "Cloud provider for WarpStream Tableflow cluster (aws, azure, gcp)"
+  type        = string
+  default     = "azure"
+}
+
+variable "cloud_region" {
+  description = "Cloud region for WarpStream Tableflow cluster"
+  type        = string
+  default     = "eastus"
+}
+
 resource "warpstream_tableflow_cluster" "dev_cluster" {
   name = "vcn_dl_tableflow_cluster_dev"
   tier = "dev"
   cloud = {
-    provider = "azure"
-    region   = "eastus"
+    provider = var.cloud_provider
+    region   = var.cloud_region
   }
 }
 resource "warpstream_agent_key" "demo_agent_key" {

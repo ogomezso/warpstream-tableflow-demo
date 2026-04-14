@@ -17,39 +17,37 @@ spec:
     spec:
       containers:
       - name: trino
-        image: trinodb/trino:469
+        image: trinodb/trino:latest
         ports:
         - containerPort: 8080
           name: http
+          protocol: TCP
         env:
-        - name: AZURE_STORAGE_KEY
+        - name: AWS_ACCESS_KEY_ID
           valueFrom:
             secretKeyRef:
-              name: azure-storage-secret
-              key: AZURE_STORAGE_KEY
-        - name: WARPSTREAM_AGENT_KEY
+              name: aws-storage-credentials
+              key: aws-access-key-id
+        - name: AWS_SECRET_ACCESS_KEY
           valueFrom:
             secretKeyRef:
-              name: warpstream-agent-apikey
-              key: apikey
+              name: aws-storage-credentials
+              key: aws-secret-access-key
+        - name: AWS_SESSION_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: aws-storage-credentials
+              key: aws-session-token
+              optional: true
+        - name: AWS_REGION
+          value: "<AWS_REGION>"
         volumeMounts:
         - name: config
-          mountPath: /etc/trino/config.properties
-          subPath: config.properties
-        - name: config
-          mountPath: /etc/trino/jvm.config
-          subPath: jvm.config
-        - name: config
-          mountPath: /etc/trino/node.properties
-          subPath: node.properties
-        - name: config
-          mountPath: /etc/trino/catalog/iceberg.properties
-          subPath: iceberg.properties
-        - name: config
-          mountPath: /etc/hadoop/conf/core-site.xml
-          subPath: core-site.xml
+          mountPath: /etc/trino
+        - name: catalog
+          mountPath: /etc/trino/catalog
         - name: data
-          mountPath: /data/trino
+          mountPath: /var/trino/data
         resources:
           requests:
             memory: "2Gi"
@@ -61,17 +59,27 @@ spec:
           httpGet:
             path: /v1/info
             port: 8080
-          initialDelaySeconds: 60
+          initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /v1/info
             port: 8080
-          initialDelaySeconds: 30
+          initialDelaySeconds: 20
           periodSeconds: 5
+      securityContext:
+        fsGroup: 1000
+        runAsUser: 1000
+        runAsNonRoot: true
       volumes:
       - name: config
         configMap:
           name: trino-config
+      - name: catalog
+        configMap:
+          name: trino-config
+          items:
+          - key: iceberg.properties
+            path: iceberg.properties
       - name: data
         emptyDir: {}

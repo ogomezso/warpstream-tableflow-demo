@@ -14,6 +14,12 @@ run_step_credentials() {
     echo -e "${GREEN}No Azure Terraform state found, skipping Azure login${NC}"
   fi
 
-  # WarpStream credentials are always needed for Terraform destroy
-  ensure_required_env_vars
+  # WarpStream credentials are needed for Terraform destroy
+  # Check if WarpStream Terraform state exists
+  if [ -d "${WARPSTREAM_TF_DIR}/.terraform" ] || [ -f "${WARPSTREAM_TF_DIR}/terraform.tfstate" ]; then
+    echo "WarpStream Terraform state detected, validating WarpStream API key..."
+    ensure_required_env_vars
+  else
+    echo -e "${GREEN}No WarpStream Terraform state found, skipping WarpStream API key validation${NC}"
+  fi
 }

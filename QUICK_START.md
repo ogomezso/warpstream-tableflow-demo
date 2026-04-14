@@ -1,6 +1,6 @@
-# Quick Start Guide - MinIO Backend with Trino
+# Quick Start Guide - Multi-Cloud Deployment
 
-Complete zero-to-running guide including Kubernetes cluster setup and WarpStream account creation.
+Complete zero-to-running guide for deploying WarpStream Tableflow on **AWS, Azure, or GCP** with your choice of cloud-native storage or local MinIO. Includes Kubernetes cluster setup and WarpStream account creation.
 
 ## Setup Prerequisites
 
@@ -156,6 +156,65 @@ choco install kubernetes-cli
 kubectl version --client
 ```
 
+### 4. Cloud Provider Authentication (For Cloud Backends)
+
+**Only required if using cloud storage (AWS S3, Azure ADLS Gen2, or GCP GCS). Skip this if using MinIO.**
+
+#### AWS Authentication
+
+```bash
+# Configure AWS credentials
+aws configure
+# Enter: Access Key ID, Secret Access Key, Default region, Default output format
+
+# Or use environment variables
+export AWS_ACCESS_KEY_ID='your_access_key'
+export AWS_SECRET_ACCESS_KEY='your_secret_key'
+export AWS_DEFAULT_REGION='us-east-1'
+
+# Verify
+aws sts get-caller-identity
+```
+
+#### Azure Authentication
+
+```bash
+# Login to Azure
+az login
+
+# List available subscriptions
+az account list --output table
+
+# Set the subscription you want to use
+az account set --subscription YOUR_SUBSCRIPTION_ID
+
+# Verify
+az account show
+```
+
+**Important:** The demo script will use your currently selected Azure subscription. Make sure to select the correct subscription before running `./demo-startup.sh`.
+
+#### GCP Authentication
+
+```bash
+# Login and set up application default credentials
+gcloud auth application-default login
+
+# List available projects
+gcloud projects list
+
+# Set your project
+gcloud config set project YOUR_PROJECT_ID
+
+# Verify authentication
+gcloud auth application-default print-access-token
+
+# Verify project is set
+gcloud config get-value project
+```
+
+**Important:** The demo script will use your currently configured GCP project. Make sure to select the correct project before running `./demo-startup.sh`.
+
 ## Pre-Flight Check
 
 Verify everything is ready:
@@ -172,36 +231,130 @@ terraform version
 
 # Check WarpStream API key
 echo $WARPSTREAM_DEPLOY_API_KEY
+
+# Check cloud authentication (if using cloud backend)
+# AWS:
+aws sts get-caller-identity
+
+# Azure:
+az account show
+
+# GCP:
+gcloud auth application-default print-access-token
+gcloud config get-value project
 ```
 
 Expected output: All commands succeed with version information.
 
 ## Deploy
 
-```bash
-# Option 1: Pre-select MinIO backend
-export TABLEFLOW_BACKEND='minio'
-./demo-startup.sh
+### Option 1: Interactive Mode (Recommended)
 
-# Option 2: Interactive selection (choose option 2)
+The script will guide you through selecting:
+1. Cloud provider (AWS, Azure, or GCP)
+2. Region (provider-specific list)
+3. Backend storage (cloud-native or MinIO)
+
+```bash
 ./demo-startup.sh
 ```
 
-Deployment takes ~5-7 minutes. All port-forwards are set up automatically!
+### Option 2: Pre-configured Deployment
+
+**AWS with Cloud Storage (S3) + Trino:**
+```bash
+export CLOUD_PROVIDER='aws'
+export TABLEFLOW_REGION='us-east-1'
+export TABLEFLOW_BACKEND='cloud'
+./demo-startup.sh
+```
+
+**Azure with Cloud Storage (ADLS Gen2) - No Trino:**
+```bash
+export CLOUD_PROVIDER='azure'
+export TABLEFLOW_REGION='eastus'
+export TABLEFLOW_BACKEND='cloud'
+./demo-startup.sh
+```
+
+**GCP with Cloud Storage (GCS) + Trino:**
+```bash
+export CLOUD_PROVIDER='gcp'
+export TABLEFLOW_REGION='us-central1'
+export TABLEFLOW_BACKEND='cloud'
+./demo-startup.sh
+```
+
+**Any Cloud with MinIO (Local Storage) + Trino:**
+```bash
+export CLOUD_PROVIDER='aws'  # Or 'azure', 'gcp'
+export TABLEFLOW_BACKEND='minio'
+./demo-startup.sh
+```
+
+### Deployment Flow
+
+The script will:
+1. ✅ Validate prerequisites (kubectl, helm, terraform)
+2. ✅ Prompt for cloud provider (if not set)
+3. ✅ Prompt for region (if not set)
+4. ✅ Prompt for backend (if not set)
+5. ✅ Verify cloud authentication (must be done beforehand via `az login`, `aws configure`, or `gcloud auth`)
+6. ✅ Deploy Confluent Platform (~2-3 min)
+7. ✅ Deploy backend storage (cloud or MinIO) (~1-2 min)
+8. ✅ Deploy Trino query engine (AWS, GCP, MinIO only) (~1-2 min)
+9. ✅ Deploy WarpStream cluster and agent (~1-2 min)
+10. ✅ Deploy Tableflow pipeline (~1 min)
+11. ✅ Set up port-forwards automatically
+
+**Total deployment time: ~5-7 minutes**
+
+All port-forwards are set up automatically!
 
 ## Access UIs
 
-Once deployment completes, these URLs are immediately available:
+Once deployment completes, the following UIs are automatically port-forwarded and ready to use:
+
+### All Deployments
 
 | UI | URL | Credentials | Purpose |
 |----|-----|-------------|---------|
 | **Confluent Control Center** | <http://localhost:9021> | - | Monitor Kafka topics and connectors |
+
+### MinIO Backend (Local Storage)
+
+| UI | URL | Credentials | Purpose |
+|----|-----|-------------|---------|
 | **MinIO Console** | <http://localhost:9001> | minioadmin / minioadmin | Browse Iceberg tables and Parquet files |
 | **Trino Query UI** | <http://localhost:8080> | - | View query history and metrics |
 
-> **Note**: All UIs are automatically port-forwarded - just click the links!
+### AWS S3 Backend (Cloud Storage)
+
+| UI | URL | Purpose |
+|----|-----|---------|
+| **Trino Query UI** | <http://localhost:8080> | View query history and metrics |
+| **AWS S3 Console** | [console.aws.amazon.com/s3](https://console.aws.amazon.com/s3) | Browse S3 bucket and Iceberg files |
+
+### GCP GCS Backend (Cloud Storage)
+
+| UI | URL | Purpose |
+|----|-----|---------|
+| **Trino Query UI** | <http://localhost:8080> | View query history and metrics |
+| **GCP Storage Console** | [console.cloud.google.com/storage](https://console.cloud.google.com/storage) | Browse GCS bucket and Iceberg files |
+
+### Azure ADLS Gen2 Backend (Cloud Storage)
+
+| UI | URL | Purpose |
+|----|-----|---------|
+| **Azure Storage Browser** | [portal.azure.com](https://portal.azure.com) | Browse ADLS Gen2 container and Iceberg files |
+
+> **Note**: Azure backend does not support Trino due to azblob:// URI incompatibility.
+
+> **Port-forwards**: All local UIs are automatically port-forwarded - just click the links!
 
 ## Query Data with Trino
+
+> **Note**: Trino is available with **AWS S3**, **GCP GCS**, and **MinIO** backends. Azure ADLS Gen2 does not support Trino.
 
 ### Quick Queries (Copy & Paste)
 
@@ -255,14 +408,16 @@ trino> quit;
 
 ## Verify Data Flow
 
-### 1. Check Confluent Control Center
+### 1. Check Confluent Control Center (All Backends)
 
 Open <http://localhost:9021>:
 - Navigate to **Topics** → `datagen-orders`
 - See messages flowing in real-time
 - Check **Connect** → Connectors → `datagen-orders`
 
-### 2. Check MinIO Console
+### 2. Check Storage Backend
+
+**MinIO Backend:**
 
 Open <http://localhost:9001> (login: minioadmin/minioadmin):
 - Navigate to **Buckets** → `tableflow` → `warpstream/_tableflow/`
@@ -270,7 +425,38 @@ Open <http://localhost:9001> (login: minioadmin/minioadmin):
 - Browse `data/` folder for Parquet files
 - Browse `metadata/` folder for Iceberg metadata
 
-### 3. Check Trino UI
+**AWS S3 Backend:**
+
+```bash
+# List Iceberg tables in S3
+aws s3 ls s3://$(terraform -chdir=environment/aws output -raw bucket_name)/warpstream/_tableflow/
+
+# View table metadata
+aws s3 ls s3://$(terraform -chdir=environment/aws output -raw bucket_name)/warpstream/_tableflow/cp_cluster__datagen-orders-*/metadata/
+```
+
+**GCP GCS Backend:**
+
+```bash
+# List Iceberg tables in GCS
+gsutil ls gs://$(terraform -chdir=environment/gcp output -raw bucket_name)/warpstream/_tableflow/
+
+# View table metadata
+gsutil ls gs://$(terraform -chdir=environment/gcp output -raw bucket_name)/warpstream/_tableflow/cp_cluster__datagen-orders-*/metadata/
+```
+
+**Azure ADLS Gen2 Backend:**
+
+```bash
+# List Iceberg tables in ADLS Gen2
+az storage fs file list \
+  --account-name $(terraform -chdir=environment/azure output -raw storage_account_name) \
+  --file-system tableflow \
+  --path "warpstream/_tableflow/" \
+  --output table
+```
+
+### 3. Check Trino UI (AWS, GCP, MinIO only)
 
 Open <http://localhost:8080>:
 - View recent queries in the dashboard
@@ -425,36 +611,66 @@ See [README.md](README.md#time-travel-queries) for more examples.
 
 ## What's Next?
 
-- Explore the [full README](README.md) for detailed documentation
-- Check [BACKEND_OPTIONS.md](BACKEND_OPTIONS.md) for backend comparison
-- See [environment/trino/README-MINIO.md](environment/trino/README-MINIO.md) for Trino architecture
-- Review [OSS_QUERY_ENGINES.md](OSS_QUERY_ENGINES.md) for why Trino works with MinIO but not Azure
+- 📖 Read the [full README](README.md) for detailed multi-cloud documentation
+- 🔀 Compare backends in [BACKEND_OPTIONS.md](BACKEND_OPTIONS.md) - AWS S3, Azure ADLS Gen2, GCP GCS, MinIO
+- 🔍 See [OSS_QUERY_ENGINES.md](OSS_QUERY_ENGINES.md) for Trino compatibility details across cloud providers
+- 🏗️ Review [ARCHITECTURE.md](ARCHITECTURE.md) for infrastructure details
+- 💡 Check [ADVANCED.md](ADVANCED.md) for advanced SQL queries and time travel examples
+- 🔧 Troubleshoot issues with [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 
 ## Architecture
+
+### Multi-Cloud Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Kubernetes Cluster                       │
 │                                                             │
-│  ┌──────────────┐  ┌──────────┐  ┌───────────┐            │
-│  │  Confluent   │  │ WarpStream│  │   MinIO   │            │
-│  │   Platform   │→ │   Agent   │→ │  Storage  │            │
-│  │   (Kafka)    │  │ +Pipeline │  │(Tableflow)│            │
-│  └──────────────┘  └──────────┘  └─────↑─────┘            │
-│         ↓                                │                  │
-│  ┌──────────────────────────────────────┴──────┐           │
-│  │           Trino Query Engine                │           │
-│  │     (Queries Iceberg via S3A)               │           │
-│  └─────────────────────────────────────────────┘           │
-└─────────────────────────────────────────────────────────────┘
-
-Data Flow:
-1. Kafka Connect generates orders → datagen-orders topic
-2. WarpStream Tableflow pipeline transforms → Iceberg tables
-3. Iceberg tables stored in MinIO (S3-compatible)
-4. Trino queries Iceberg tables via Hadoop S3A
+│  ┌──────────────┐  ┌──────────────┐                        │
+│  │  Confluent   │  │  WarpStream  │                        │
+│  │   Platform   │→ │    Agent     │                        │
+│  │   (Kafka)    │  │  + Pipeline  │                        │
+│  └──────────────┘  └──────┬───────┘                        │
+│                            │                                │
+│                            ↓                                │
+└────────────────────────────┼────────────────────────────────┘
+                             │
+                    Storage Backend
+                             │
+         ┌───────────────────┼───────────────────┐
+         │                   │                   │
+    ┌────▼────┐         ┌────▼────┐        ┌────▼────┐
+    │ AWS S3  │         │ GCP GCS │        │  Azure  │
+    │(Trino✅)│         │(Trino✅)│        │ADLS Gen2│
+    └─────────┘         └─────────┘        │(Trino❌)│
+                                           └─────────┘
+         OR
+    ┌─────────────────────────────────┐
+    │   MinIO (Local in K8s)          │
+    │   S3-compatible (Trino✅)       │
+    └─────────────────────────────────┘
 ```
+
+### Data Flow
+
+1. **Kafka Connect** generates sample orders → `datagen-orders` topic
+2. **WarpStream Tableflow** pipeline transforms → Iceberg tables
+3. **Iceberg tables** stored in chosen backend:
+   - **AWS S3** - Native S3 protocol
+   - **GCP GCS** - Native GCS protocol
+   - **Azure ADLS Gen2** - azblob:// protocol
+   - **MinIO** - S3-compatible protocol
+4. **Trino** queries Iceberg tables (AWS, GCP, MinIO only)
+
+### Backend-Specific Details
+
+| Backend | Storage Protocol | Trino Support | Query Performance |
+|---------|------------------|---------------|-------------------|
+| AWS S3 | s3:// | ✅ Native S3 | Excellent |
+| GCP GCS | gs:// | ✅ Native GCS | Excellent |
+| Azure ADLS Gen2 | azblob:// | ❌ No | N/A |
+| MinIO | s3:// | ✅ S3A | Good |
 
 ---
 
-**🎉 You're all set!** Start querying your Iceberg tables with Trino!
+**🎉 You're all set!** Start querying your Iceberg tables across any cloud provider!

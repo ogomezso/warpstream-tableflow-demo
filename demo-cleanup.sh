@@ -53,7 +53,41 @@ FAILURES=()
 PENDING_NAMESPACES=()
 TF_DESTROY_SUCCESS_WARPSTREAM=false
 TF_DESTROY_SUCCESS_AZURE=false
+TF_DESTROY_SUCCESS_AWS=false
+TF_DESTROY_SUCCESS_GCP=false
 TF_DESTROY_SUCCESS_TABLEFLOW_PIPELINE=false
+
+########################################
+# Helper functions
+########################################
+
+# Detect which cloud backends were used
+detect_cloud_backends() {
+  local backends=()
+
+  # Check for Azure
+  if [ -f "${SCRIPT_DIR}/environment/azure/terraform.tfstate" ]; then
+    backends+=("azure")
+  fi
+
+  # Check for AWS
+  if [ -f "${SCRIPT_DIR}/environment/aws/terraform.tfstate" ]; then
+    backends+=("aws")
+  fi
+
+  # Check for GCP
+  if [ -f "${SCRIPT_DIR}/environment/gcp/terraform.tfstate" ]; then
+    backends+=("gcp")
+  fi
+
+  # Check for MinIO
+  if kubectl get namespace minio >/dev/null 2>&1; then
+    backends+=("minio")
+  fi
+
+  # Use parameter expansion to avoid "unbound variable" error when array is empty
+  echo "${backends[@]:-}"
+}
 
 ########################################
 # Source cleanup step modules
@@ -64,6 +98,9 @@ source "${SCRIPT_DIR}/scripts/cleanup/02-tableflow-pipeline.sh"
 source "${SCRIPT_DIR}/scripts/cleanup/03-warpstream-k8s.sh"
 source "${SCRIPT_DIR}/scripts/cleanup/03b-minio.sh"
 source "${SCRIPT_DIR}/scripts/cleanup/03c-trino.sh"
+source "${SCRIPT_DIR}/scripts/cleanup/03d-aws.sh"
+source "${SCRIPT_DIR}/scripts/cleanup/03e-gcp.sh"
+source "${SCRIPT_DIR}/scripts/cleanup/03f-trino-cloud.sh"
 source "${SCRIPT_DIR}/scripts/cleanup/04-terraform.sh"
 source "${SCRIPT_DIR}/scripts/cleanup/05-confluent.sh"
 source "${SCRIPT_DIR}/scripts/cleanup/06-cleanup-files.sh"
@@ -81,6 +118,11 @@ require_cmd helm
 require_cmd terraform
 require_cmd az
 
+# Detect which backends were used
+DETECTED_BACKENDS=($(detect_cloud_backends))
+echo -e "${CYAN}Detected backends: ${DETECTED_BACKENDS[*]:-none}${NC}"
+echo
+
 # Stop port-forwards first
 echo -e "${YELLOW}Stopping port-forwards...${NC}"
 stop_control_center_port_forward
@@ -92,27 +134,55 @@ echo
 run_step_credentials
 run_step_destroy_tableflow_pipeline
 run_step_warpstream_k8s
-run_step_cleanup_minio
-run_step_cleanup_trino
+
+# Always attempt to cleanup Trino and MinIO/Cloud backends
+# These functions check if resources exist before attempting cleanup
+echo -e "${CYAN}Attempting cleanup of query engines and object storage...${NC}"
+run_step_cleanup_trino || true
+run_step_cleanup_minio || true
+
+# Cleanup cloud backends if they were detected
+for backend in "${DETECTED_BACKENDS[@]:-}"; do
+  # Skip if no backends detected (empty array)
+  [ -z "$backend" ] && continue
+
+  case "$backend" in
+    aws)
+      run_cleanup_aws
+      ;;
+    gcp)
+      run_cleanup_gcp
+      ;;
+    azure)
+      # Azure cleanup handled in run_step_destroy_terraform
+      ;;
+    minio)
+      # MinIO cleanup already attempted above
+      ;;
+  esac
+done
+
 run_step_destroy_terraform
 run_step_confluent
 run_step_cleanup_files
 
 echo
-if [ "${#FAILURES[@]}" -eq 0 ] && [ "${#PENDING_NAMESPACES[@]}" -eq 0 ]; then
+if [ "${#FAILURES[@]:-0}" -eq 0 ] && [ "${#PENDING_NAMESPACES[@]:-0}" -eq 0 ]; then
   echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo -e "${GREEN}Demo Cleanup Complete${NC}"
   echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-elif [ "${#FAILURES[@]}" -eq 0 ]; then
+elif [ "${#FAILURES[@]:-0}" -eq 0 ]; then
   echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo -e "${YELLOW}Demo Cleanup Complete (with pending namespace deletions)${NC}"
   echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo -e "${YELLOW}Warning: The following namespaces are still terminating:${NC}"
-  for ns in "${PENDING_NAMESPACES[@]}"; do
+  for ns in "${PENDING_NAMESPACES[@]:-}"; do
+    [ -z "$ns" ] && continue
     echo -e "${YELLOW}  - ${ns}${NC}"
   done
   echo -e "${YELLOW}Please verify these are fully deleted by running:${NC}"
-  for ns in "${PENDING_NAMESPACES[@]}"; do
+  for ns in "${PENDING_NAMESPACES[@]:-}"; do
+    [ -z "$ns" ] && continue
     echo "  kubectl get namespace ${ns}"
   done
 else
@@ -120,17 +190,20 @@ else
   echo -e "${YELLOW}Demo Cleanup Completed With Failures${NC}"
   echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo "Failures:"
-  for failure in "${FAILURES[@]}"; do
+  for failure in "${FAILURES[@]:-}"; do
+    [ -z "$failure" ] && continue
     echo "- ${failure}"
   done
-  if [ "${#PENDING_NAMESPACES[@]}" -gt 0 ]; then
+  if [ "${#PENDING_NAMESPACES[@]:-0}" -gt 0 ]; then
     echo
     echo -e "${YELLOW}Warning: The following namespaces are still terminating:${NC}"
-    for ns in "${PENDING_NAMESPACES[@]}"; do
+    for ns in "${PENDING_NAMESPACES[@]:-}"; do
+      [ -z "$ns" ] && continue
       echo -e "${YELLOW}  - ${ns}${NC}"
     done
     echo -e "${YELLOW}Please verify these are fully deleted by running:${NC}"
-    for ns in "${PENDING_NAMESPACES[@]}"; do
+    for ns in "${PENDING_NAMESPACES[@]:-}"; do
+      [ -z "$ns" ] && continue
       echo "  kubectl get namespace ${ns}"
     done
   fi

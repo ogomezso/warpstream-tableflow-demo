@@ -23,13 +23,13 @@ data:
             # Proxy all other requests to WarpStream REST catalog
             location / {
                 # Pass through the original request
-                proxy_pass https://metadata.default.eastus.azure.warpstream.com;
+                proxy_pass https://<METADATA_URL>;
 
                 # Add WarpStream authorization header
                 proxy_set_header Authorization "Bearer ${WARPSTREAM_AGENT_KEY}";
 
                 # Preserve original headers
-                proxy_set_header Host metadata.default.eastus.azure.warpstream.com;
+                proxy_set_header Host <METADATA_URL>;
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                 proxy_set_header X-Forwarded-Proto $scheme;

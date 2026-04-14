@@ -1,0 +1,37 @@
+replicas: 1
+
+autoscaling:
+  enabled: false
+
+serviceAccount:
+  create: true
+  name: warpstream-agent
+
+# GCP GCS storage configuration
+config:
+  bucketURL: '<BUCKET_URL>'
+  virtualClusterID: <VIRTUAL_CLUSTER_ID>
+  region: <WARPSTREAM_CONTROL_PLANE_REGION>
+  agentKey: <AGENT_KEY>
+
+extraEnv:
+  - name: WARPSTREAM_DEFAULT_VIRTUAL_CLUSTER_ID
+    value: "<VIRTUAL_CLUSTER_ID>"
+
+  - name: WARPSTREAM_REGION
+    value: "<WARPSTREAM_CONTROL_PLANE_REGION>"
+
+  # For local/non-cloud deployments, explicitly set the availability zone
+  # This prevents errors when the agent cannot auto-detect the zone
+  - name: WARPSTREAM_AVAILABILITY_ZONE
+    value: "local-k8s-cluster"
+
+  # GCP credentials
+  - name: GOOGLE_APPLICATION_CREDENTIALS
+    value: "/var/secrets/google/credentials.json"
+  - name: GCP_PROJECT
+    value: "<GCP_PROJECT>"
+
+# Volume mounts for GCP service account credentials
+# Note: The deployment will be patched programmatically after Helm deployment
+# to add the gcp-credentials volume mount (WarpStream Helm chart doesn't support extraVolumes)

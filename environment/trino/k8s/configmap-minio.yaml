@@ -36,9 +36,11 @@ data:
     connector.name=iceberg
     iceberg.catalog.type=rest
     iceberg.rest-catalog.uri=http://warpstream-iceberg-proxy.trino.svc.cluster.local:8080/catalogs/iceberg/<WARPSTREAM_VIRTUAL_CLUSTER_ID>
-    iceberg.rest-catalog.vended-credentials-enabled=true
-    fs.native-s3.enabled=false
-    # Use Hadoop S3A filesystem for better MinIO compatibility
+    iceberg.rest-catalog.vended-credentials-enabled=false
+    fs.native-s3.enabled=true
+    s3.endpoint=http://minio.minio.svc.cluster.local:9000
+    s3.path-style-access=true
+    s3.region=<WARPSTREAM_CONTROL_PLANE_REGION>
 
   # Core site configuration for Hadoop S3A with MinIO
   core-site.xml: |
@@ -68,6 +70,11 @@ data:
       </property>
       <property>
         <name>fs.s3a.impl</name>
+        <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+      </property>
+      <!-- Register S3AFileSystem for s3:// scheme (not just s3a://) -->
+      <property>
+        <name>fs.s3.impl</name>
         <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
       </property>
       <!-- Performance tuning -->

@@ -7,47 +7,111 @@ run_step_cleanup_trino() {
   echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
   local trino_namespace="trino"
+  local namespace_timeout=10
 
   # Check if Trino namespace exists
   if ! kubectl get namespace "${trino_namespace}" >/dev/null 2>&1; then
-    echo -e "${YELLOW}Trino namespace not found, skipping...${NC}"
+    echo -e "${CYAN}Trino namespace not found - nothing to clean up${NC}"
     echo
     return
   fi
 
   echo "Deleting Trino resources..."
 
-  # Delete deployments
-  kubectl delete deployment trino -n "${trino_namespace}" --ignore-not-found=true 2>&1 | grep -v "NotFound" || true
-  kubectl delete deployment warpstream-iceberg-proxy -n "${trino_namespace}" --ignore-not-found=true 2>&1 | grep -v "NotFound" || true
+  # Delete all standard resources
+  echo "  Deleting pods, services, deployments..."
+  kubectl -n "${trino_namespace}" delete all --all --grace-period=0 --force --ignore-not-found --timeout=30s || true
+  kubectl -n "${trino_namespace}" delete secret --all --grace-period=0 --force --ignore-not-found --timeout=30s || true
+  kubectl -n "${trino_namespace}" delete configmap --all --grace-period=0 --force --ignore-not-found --timeout=30s || true
 
-  # Delete services
-  kubectl delete service trino -n "${trino_namespace}" --ignore-not-found=true 2>&1 | grep -v "NotFound" || true
-  kubectl delete service warpstream-iceberg-proxy -n "${trino_namespace}" --ignore-not-found=true 2>&1 | grep -v "NotFound" || true
+  # Delete PVCs and wait for confirmation
+  echo "  Deleting PVCs and waiting for removal..."
+  kubectl -n "${trino_namespace}" delete pvc --all --grace-period=0 --force --ignore-not-found || true
 
-  # Delete configmaps
-  kubectl delete configmap trino-config -n "${trino_namespace}" --ignore-not-found=true 2>&1 | grep -v "NotFound" || true
-  kubectl delete configmap warpstream-proxy-config -n "${trino_namespace}" --ignore-not-found=true 2>&1 | grep -v "NotFound" || true
-
-  # Delete secrets
-  kubectl delete secret warpstream-agent-apikey -n "${trino_namespace}" --ignore-not-found=true 2>&1 | grep -v "NotFound" || true
-
-  # Delete namespace
-  echo "Deleting Trino namespace..."
-  if kubectl delete namespace "${trino_namespace}" --timeout="${NAMESPACE_DELETE_TIMEOUT_SECONDS}s" 2>&1 | tee /tmp/trino_delete.log | grep -q "deleted"; then
-    echo -e "${GREEN}✓ Trino namespace deleted${NC}"
-  else
-    if grep -q "not found" /tmp/trino_delete.log; then
-      echo -e "${YELLOW}Trino namespace not found${NC}"
-    elif kubectl get namespace "${trino_namespace}" -o jsonpath='{.status.phase}' 2>/dev/null | grep -q "Terminating"; then
-      echo -e "${YELLOW}Warning: Trino namespace is still terminating${NC}"
-      PENDING_NAMESPACES+=("${trino_namespace}")
-    else
-      echo -e "${RED}✗ Failed to delete Trino namespace${NC}"
-      FAILURES+=("Failed to delete Trino namespace")
+  # Wait up to 60s for PVCs to be fully deleted
+  local pvc_wait=0
+  local pvc_max_wait=60
+  while [ $pvc_wait -lt $pvc_max_wait ]; do
+    remaining_pvcs=$(kubectl get pvc -n "${trino_namespace}" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$remaining_pvcs" -eq 0 ]; then
+      echo -e "${GREEN}    ✓ All PVCs deleted${NC}"
+      break
     fi
+
+    # Remove finalizers from stuck PVCs
+    if [ $pvc_wait -gt 10 ]; then
+      for pvc in $(kubectl get pvc -n "${trino_namespace}" -o name 2>/dev/null); do
+        kubectl patch "$pvc" -n "${trino_namespace}" -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
+      done
+    fi
+
+    sleep 2
+    pvc_wait=$((pvc_wait + 2))
+  done
+
+  if [ "$remaining_pvcs" -gt 0 ]; then
+    echo -e "${YELLOW}    ⚠ ${remaining_pvcs} PVC(s) still terminating after ${pvc_max_wait}s${NC}"
   fi
 
-  rm -f /tmp/trino_delete.log
+  # Delete PVs that belong to Trino and wait for confirmation
+  echo "  Deleting PVs..."
+  local pv_list=$(kubectl get pv -o json 2>/dev/null | jq -r '.items[] | select(.spec.claimRef.namespace == "'${trino_namespace}'") | .metadata.name' 2>/dev/null)
+
+  if [ -n "$pv_list" ]; then
+    for pv in $pv_list; do
+      kubectl delete pv "$pv" --grace-period=0 --force 2>/dev/null || true
+    done
+
+    # Wait up to 30s for PVs to be fully deleted
+    local pv_wait=0
+    local pv_max_wait=30
+    while [ $pv_wait -lt $pv_max_wait ]; do
+      remaining_pvs=$(kubectl get pv -o json 2>/dev/null | jq -r '.items[] | select(.spec.claimRef.namespace == "'${trino_namespace}'") | .metadata.name' 2>/dev/null | wc -l | tr -d ' ')
+      if [ "$remaining_pvs" -eq 0 ]; then
+        echo -e "${GREEN}    ✓ All PVs deleted${NC}"
+        break
+      fi
+
+      # Remove finalizers from stuck PVs
+      if [ $pv_wait -gt 10 ]; then
+        for pv in $(kubectl get pv -o json 2>/dev/null | jq -r '.items[] | select(.spec.claimRef.namespace == "'${trino_namespace}'") | .metadata.name' 2>/dev/null); do
+          kubectl patch pv "$pv" -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
+        done
+      fi
+
+      sleep 2
+      pv_wait=$((pv_wait + 2))
+    done
+
+    if [ "$remaining_pvs" -gt 0 ]; then
+      echo -e "${YELLOW}    ⚠ ${remaining_pvs} PV(s) still terminating after ${pv_max_wait}s${NC}"
+    fi
+  else
+    echo -e "${CYAN}    No PVs found${NC}"
+  fi
+
+  # Remove finalizers from namespace
+  kubectl get namespace "${trino_namespace}" -o json 2>/dev/null | \
+    jq '.spec.finalizers = []' 2>/dev/null | \
+    kubectl replace --raw "/api/v1/namespaces/${trino_namespace}/finalize" -f - 2>/dev/null || true
+
+  # Initiate namespace deletion
+  echo "  Deleting namespace (waiting max ${namespace_timeout}s)..."
+  kubectl delete namespace "${trino_namespace}" --grace-period=0 --force --ignore-not-found --wait=false || true
+
+  # Wait up to 10s for namespace deletion
+  local ns_wait=0
+  while [ $ns_wait -lt $namespace_timeout ]; do
+    if ! kubectl get namespace "${trino_namespace}" >/dev/null 2>&1; then
+      echo -e "${GREEN}    ✓ Namespace deleted${NC}"
+      echo
+      return
+    fi
+    sleep 1
+    ns_wait=$((ns_wait + 1))
+  done
+
+  # Namespace still exists after timeout
+  echo -e "${YELLOW}    ⚠ Namespace still terminating (continuing cleanup)${NC}"
   echo
 }

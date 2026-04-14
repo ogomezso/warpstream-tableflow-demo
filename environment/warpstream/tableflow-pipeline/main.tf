@@ -36,7 +36,9 @@ resource "warpstream_pipeline" "tableflow_pipeline" {
   state              = "running"
   type               = "tableflow"
 
-  configuration_yaml = file("${path.module}/orders-tableflow-pipeline.yaml")
+  # Use the generated file - the startup script ensures this is created before Terraform runs
+  # During destroy, use a placeholder if file doesn't exist (Terraform still needs to evaluate this)
+  configuration_yaml = fileexists("${path.module}/orders-tableflow-pipeline.yaml") ? file("${path.module}/orders-tableflow-pipeline.yaml") : "# placeholder for destroy"
 }
 
 ########################################

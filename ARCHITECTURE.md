@@ -277,15 +277,21 @@ warpstream-tableflow-demo/
     ├── trino/
     │   ├── k8s/
     │   │   ├── namespace.yaml         # Trino namespace
-    │   │   ├── configmap.yaml         # Trino config (Azure - doesn't work)
-    │   │   ├── configmap-minio.yaml   # Trino config (MinIO - works!)
-    │   │   ├── deployment.yaml        # Trino deployment (Azure)
+    │   │   ├── configmap-azure.yaml   # Trino config (Azure)
+    │   │   ├── configmap-aws.yaml     # Trino config (AWS)
+    │   │   ├── configmap-gcp.yaml     # Trino config (GCP)
+    │   │   ├── configmap-minio.yaml   # Trino config (MinIO)
+    │   │   ├── deployment-azure.yaml  # Trino deployment (Azure)
+    │   │   ├── deployment-aws.yaml    # Trino deployment (AWS)
+    │   │   ├── deployment-gcp.yaml    # Trino deployment (GCP)
     │   │   ├── deployment-minio.yaml  # Trino deployment (MinIO)
     │   │   ├── service.yaml           # Trino service
     │   │   ├── proxy-configmap.yaml   # WarpStream auth proxy config
     │   │   ├── proxy-deployment.yaml  # Proxy deployment
     │   │   └── proxy-service.yaml     # Proxy service
-    │   ├── deploy.sh                  # Deployment script (Azure)
+    │   ├── deploy-azure.sh            # Deployment script (Azure)
+    │   ├── deploy-aws.sh              # Deployment script (AWS)
+    │   ├── deploy-gcp.sh              # Deployment script (GCP)
     │   ├── deploy-minio.sh            # Deployment script (MinIO)
     │   ├── test.sh                    # Test script
     │   ├── README.md                  # Trino documentation (Azure)
@@ -295,7 +301,9 @@ warpstream-tableflow-demo/
     │   └── datagen-connector.yaml     # Datagen connector config
     └── warpstream/
         ├── agent/
-        │   ├── warpstream-agent-template.yaml        # Azure backend template
+        │   ├── warpstream-agent-azure-template.yaml  # Azure backend template
+        │   ├── warpstream-agent-aws-template.yaml    # AWS backend template
+        │   ├── warpstream-agent-gcp-template.yaml    # GCP backend template
         │   ├── warpstream-agent-minio-template.yaml  # MinIO backend template
         │   └── warpstream-agent.yaml                 # Generated config
         ├── cluster/

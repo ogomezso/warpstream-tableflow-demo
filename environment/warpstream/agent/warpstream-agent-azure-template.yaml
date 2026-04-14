@@ -11,7 +11,7 @@ serviceAccount:
 config:
   bucketURL: azblob://<TABLEFLOW_CONTAINER>
   virtualClusterID: <TABLEFLOW_VIRTUAL_CLUSTER_ID>
-  region: <TABLEFLOW_REGION>
+  region: <WARPSTREAM_CONTROL_PLANE_REGION>
   agentKey: <WARPSTREAM_AGENT_KEY>
 
 extraEnv:
@@ -19,7 +19,7 @@ extraEnv:
     value: "<TABLEFLOW_VIRTUAL_CLUSTER_ID>"
 
   - name: WARPSTREAM_REGION
-    value: "<TABLEFLOW_REGION>"
+    value: "<WARPSTREAM_CONTROL_PLANE_REGION>"
 
   # Azure auth (for a quick PoC using access keys; prefer workload identity in real env)
   - name: AZURE_STORAGE_ACCOUNT

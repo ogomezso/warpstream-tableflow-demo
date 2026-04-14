@@ -44,7 +44,8 @@ detect_query_engines() {
     engines+=("spark")
   fi
 
-  echo "${engines[@]}"
+  # Use :- to handle empty array with set -u
+  echo "${engines[@]:-}"
 }
 
 show_usage() {
@@ -100,9 +101,13 @@ interactive_menu() {
   echo
 
   # Detect available engines
-  local engines=($(detect_query_engines))
+  local engines_output=$(detect_query_engines)
+  local engines=()
+  if [ -n "$engines_output" ]; then
+    engines=($engines_output)
+  fi
 
-  if [ "${#engines[@]}" -eq 0 ]; then
+  if [ "${#engines[@]:-0}" -eq 0 ]; then
     echo -e "${RED}No query engines detected!${NC}"
     echo
     echo "Please deploy a supported backend first:"
@@ -113,7 +118,8 @@ interactive_menu() {
   fi
 
   echo -e "${GREEN}Detected query engines:${NC}"
-  for engine in "${engines[@]}"; do
+  for engine in "${engines[@]:-}"; do
+    [ -z "$engine" ] && continue
     case "$engine" in
       trino)
         echo "  ✓ Trino (namespace: ${TRINO_NAMESPACE})"
@@ -127,7 +133,7 @@ interactive_menu() {
 
   # Select engine if multiple available
   local selected_engine
-  if [ "${#engines[@]}" -eq 1 ]; then
+  if [ "${#engines[@]:-0}" -eq 1 ]; then
     selected_engine="${engines[0]}"
     echo -e "${GREEN}Using query engine: ${selected_engine}${NC}"
     echo
@@ -137,9 +143,9 @@ interactive_menu() {
       echo "  $((i+1))) ${engines[$i]}"
     done
     echo
-    read -p "Select engine (1-${#engines[@]}): " engine_choice
+    read -p "Select engine (1-${#engines[@]:-0}): " engine_choice
 
-    if ! [[ "$engine_choice" =~ ^[0-9]+$ ]] || [ "$engine_choice" -lt 1 ] || [ "$engine_choice" -gt "${#engines[@]}" ]; then
+    if ! [[ "$engine_choice" =~ ^[0-9]+$ ]] || [ "$engine_choice" -lt 1 ] || [ "$engine_choice" -gt "${#engines[@]:-0}" ]; then
       echo -e "${RED}Invalid selection${NC}"
       exit 1
     fi
@@ -185,18 +191,22 @@ else
   case "$1" in
     time-travel)
       # Detect engine and run time travel
-      engines=($(detect_query_engines))
+      engines_output=$(detect_query_engines)
+      engines=()
+      if [ -n "$engines_output" ]; then
+        engines=($engines_output)
+      fi
 
-      if [ "${#engines[@]}" -eq 0 ]; then
+      if [ "${#engines[@]:-0}" -eq 0 ]; then
         echo -e "${RED}No query engines detected!${NC}"
         echo "Please deploy the demo with MinIO backend first."
         exit 1
       fi
 
       # Use first available engine (prefer Trino)
-      if [[ " ${engines[@]} " =~ " trino " ]]; then
+      if [[ " ${engines[@]:-} " =~ " trino " ]]; then
         run_time_travel "trino"
-      elif [[ " ${engines[@]} " =~ " spark " ]]; then
+      elif [[ " ${engines[@]:-} " =~ " spark " ]]; then
         run_time_travel "spark"
       else
         run_time_travel "${engines[0]}"

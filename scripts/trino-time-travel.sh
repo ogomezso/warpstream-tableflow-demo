@@ -83,7 +83,7 @@ while IFS= read -r line; do
   if [ -n "$line" ]; then
     tables_array+=("$line")
   fi
-done <<< "$tables_output"
+done < <(echo "$tables_output")
 
 if [ "${#tables_array[@]}" -eq 0 ]; then
   echo -e "${RED}No tables found${NC}"
@@ -133,9 +133,9 @@ fi
 # Display snapshots table
 echo "Snapshots (most recent first):"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "$snapshots_output" | head -1  # Header
+printf "%-25s %-30s %-15s\n" "Snapshot ID" "Timestamp" "Operation"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "$snapshots_output" | tail -n +2  # Data rows
+echo "$snapshots_output"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
 
@@ -145,11 +145,12 @@ while IFS= read -r line; do
   if [ -n "$line" ]; then
     snapshot_lines+=("$line")
   fi
-done <<< "$(echo "$snapshots_output" | tail -n +2)"
+done < <(echo "$snapshots_output")
 
 if [ "${#snapshot_lines[@]}" -eq 0 ]; then
-  echo -e "${RED}No snapshot data available${NC}"
-  exit 1
+  echo -e "${YELLOW}No historical snapshots found${NC}"
+  echo "The table exists but may not have any committed snapshots yet."
+  echo
 fi
 
 # Extract snapshot IDs and timestamps
@@ -170,37 +171,53 @@ for line in "${snapshot_lines[@]}"; do
   fi
 done
 
-if [ "${#snapshot_ids[@]}" -eq 0 ]; then
-  echo -e "${RED}Failed to parse snapshot IDs${NC}"
-  exit 1
-fi
-
 # Select snapshot
 echo -e "${YELLOW}Step 3: Select a snapshot to query${NC}"
 echo
 echo "Available snapshots:"
-for i in "${!snapshot_ids[@]}"; do
-  echo "  $((i+1))) Snapshot ID: ${snapshot_ids[$i]} (${snapshot_times[$i]})"
-done
+echo "  1) Current snapshot (latest data)"
+
+# Add historical snapshots starting from option 2
+if [ "${#snapshot_ids[@]}" -gt 0 ]; then
+  for i in "${!snapshot_ids[@]}"; do
+    echo "  $((i+2))) Snapshot ID: ${snapshot_ids[$i]} (${snapshot_times[$i]})"
+  done
+  max_choice=$((${#snapshot_ids[@]} + 1))
+else
+  max_choice=1
+fi
 echo
 
-read -p "Select snapshot number (1-${#snapshot_ids[@]}): " snapshot_choice
+read -p "Select snapshot number (1-${max_choice}): " snapshot_choice
 
-if ! [[ "$snapshot_choice" =~ ^[0-9]+$ ]] || [ "$snapshot_choice" -lt 1 ] || [ "$snapshot_choice" -gt "${#snapshot_ids[@]}" ]; then
+if ! [[ "$snapshot_choice" =~ ^[0-9]+$ ]] || [ "$snapshot_choice" -lt 1 ] || [ "$snapshot_choice" -gt "$max_choice" ]; then
   echo -e "${RED}Invalid selection${NC}"
   exit 1
 fi
 
-selected_snapshot_id="${snapshot_ids[$((snapshot_choice-1))]}"
-selected_snapshot_time="${snapshot_times[$((snapshot_choice-1))]}"
-
-echo
-echo -e "${GREEN}✓ Selected snapshot: ${selected_snapshot_id} (${selected_snapshot_time})${NC}"
-echo
+if [ "$snapshot_choice" -eq 1 ]; then
+  # Current snapshot
+  selected_snapshot_id="current"
+  selected_snapshot_time="current"
+  echo
+  echo -e "${GREEN}✓ Selected: Current snapshot (latest data)${NC}"
+  echo
+else
+  # Historical snapshot
+  selected_snapshot_id="${snapshot_ids[$((snapshot_choice-2))]}"
+  selected_snapshot_time="${snapshot_times[$((snapshot_choice-2))]}"
+  echo
+  echo -e "${GREEN}✓ Selected snapshot: ${selected_snapshot_id} (${selected_snapshot_time})${NC}"
+  echo
+fi
 
 # Get total row count for this snapshot first
 echo -e "${YELLOW}Counting rows in snapshot...${NC}"
-count_query="SELECT COUNT(*) as total_rows FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\" FOR VERSION AS OF ${selected_snapshot_id}"
+if [ "$selected_snapshot_id" = "current" ]; then
+  count_query="SELECT COUNT(*) as total_rows FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\""
+else
+  count_query="SELECT COUNT(*) as total_rows FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\" FOR VERSION AS OF ${selected_snapshot_id}"
+fi
 total_rows=$(trino_exec "$count_query" | grep -v "WARNING" | tail -1 | tr -d '"' || echo "0")
 echo
 
@@ -224,18 +241,33 @@ fi
 
 # Execute time travel query
 echo
-echo -e "${YELLOW}Step 5: Executing time travel query...${NC}"
+echo -e "${YELLOW}Step 5: Executing query...${NC}"
 echo
 echo -e "${YELLOW}Query:${NC}"
 echo "  SELECT ordertime, orderid, itemid, orderunits,"
 echo "         address.city, address.state, address.zipcode"
 echo "  FROM \"${selected_table}\""
-echo "  FOR VERSION AS OF ${selected_snapshot_id}"
+if [ "$selected_snapshot_id" != "current" ]; then
+  echo "  FOR VERSION AS OF ${selected_snapshot_id}"
+fi
 echo "  LIMIT ${row_limit}"
 echo
 
 # Query with formatted columns for better readability
-time_travel_query="SELECT
+if [ "$selected_snapshot_id" = "current" ]; then
+  time_travel_query="SELECT
+  ordertime,
+  orderid,
+  itemid,
+  ROUND(orderunits, 2) as orderunits,
+  address.city as city,
+  address.state as state,
+  address.zipcode as zipcode
+FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\"
+ORDER BY ordertime DESC
+LIMIT ${row_limit}"
+else
+  time_travel_query="SELECT
   ordertime,
   orderid,
   itemid,
@@ -247,6 +279,7 @@ FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\"
 FOR VERSION AS OF ${selected_snapshot_id}
 ORDER BY ordertime DESC
 LIMIT ${row_limit}"
+fi
 
 echo -e "${GREEN}Results (${row_limit} rows):${NC}"
 echo
@@ -265,74 +298,98 @@ fi
 echo
 
 # Show statistics comparison
-echo -e "${YELLOW}Snapshot Statistics:${NC}"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+if [ "$selected_snapshot_id" != "current" ]; then
+  echo -e "${YELLOW}Snapshot Statistics:${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Get current count
-current_count_query="SELECT COUNT(*) as total_rows FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\""
-current_count=$(trino_exec "$current_count_query" | grep -v "WARNING" | tail -1 | tr -d '"' || echo "0")
+  # Get current count
+  current_count_query="SELECT COUNT(*) as total_rows FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\""
+  current_count=$(trino_exec "$current_count_query" | grep -v "WARNING" | tail -1 | tr -d '"' || echo "0")
 
-# Calculate percentage using bc if available, otherwise skip decimal
-if command -v bc &>/dev/null && [ "$total_rows" -gt 0 ] && [ "$current_count" -gt 0 ]; then
-  percentage=$(echo "scale=1; ($total_rows * 100) / $current_count" | bc)
-else
-  percentage="N/A"
-fi
+  # Calculate percentage using bc if available, otherwise skip decimal
+  if command -v bc &>/dev/null && [ "$total_rows" -gt 0 ] && [ "$current_count" -gt 0 ]; then
+    percentage=$(echo "scale=1; ($total_rows * 100) / $current_count" | bc)
+  else
+    percentage="N/A"
+  fi
 
-printf "  %-20s : %d rows\n" "Snapshot (selected)" "$total_rows"
-printf "  %-20s : %d rows\n" "Current (latest)" "$current_count"
-echo "  ────────────────────────────────────────────────────────"
+  printf "  %-20s : %d rows\n" "Snapshot (selected)" "$total_rows"
+  printf "  %-20s : %d rows\n" "Current (latest)" "$current_count"
+  echo "  ────────────────────────────────────────────────────────"
 
-if [ "$total_rows" != "$current_count" ]; then
-  diff=$((current_count - total_rows))
-  if [ $diff -gt 0 ]; then
-    if command -v bc &>/dev/null && [ "$total_rows" -gt 0 ]; then
-      change_pct=$(echo "scale=1; ($diff * 100) / $total_rows" | bc)
-      printf "  %-20s : ${GREEN}+%d rows (+%s%%)${NC}\n" "Change" "$diff" "$change_pct"
+  if [ "$total_rows" != "$current_count" ]; then
+    diff=$((current_count - total_rows))
+    if [ $diff -gt 0 ]; then
+      if command -v bc &>/dev/null && [ "$total_rows" -gt 0 ]; then
+        change_pct=$(echo "scale=1; ($diff * 100) / $total_rows" | bc)
+        printf "  %-20s : ${GREEN}+%d rows (+%s%%)${NC}\n" "Change" "$diff" "$change_pct"
+      else
+        printf "  %-20s : ${GREEN}+%d rows${NC}\n" "Change" "$diff"
+      fi
     else
-      printf "  %-20s : ${GREEN}+%d rows${NC}\n" "Change" "$diff"
+      abs_diff=$((diff * -1))
+      if command -v bc &>/dev/null && [ "$total_rows" -gt 0 ]; then
+        change_pct=$(echo "scale=1; ($abs_diff * 100) / $total_rows" | bc)
+        printf "  %-20s : ${RED}-%d rows (-%s%%)${NC}\n" "Change" "$abs_diff" "$change_pct"
+      else
+        printf "  %-20s : ${RED}-%d rows${NC}\n" "Change" "$abs_diff"
+      fi
+    fi
+    if [ "$percentage" != "N/A" ]; then
+      printf "  %-20s : %s%% of current data\n" "Snapshot coverage" "$percentage"
     fi
   else
-    abs_diff=$((diff * -1))
-    if command -v bc &>/dev/null && [ "$total_rows" -gt 0 ]; then
-      change_pct=$(echo "scale=1; ($abs_diff * 100) / $total_rows" | bc)
-      printf "  %-20s : ${RED}-%d rows (-%s%%)${NC}\n" "Change" "$abs_diff" "$change_pct"
-    else
-      printf "  %-20s : ${RED}-%d rows${NC}\n" "Change" "$abs_diff"
-    fi
+    printf "  %-20s : ${GREEN}No change${NC}\n" "Change"
   fi
-  if [ "$percentage" != "N/A" ]; then
-    printf "  %-20s : %s%% of current data\n" "Snapshot coverage" "$percentage"
-  fi
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 else
-  printf "  %-20s : ${GREEN}No change${NC}\n" "Change"
+  echo -e "${YELLOW}Current Snapshot Statistics:${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  printf "  %-20s : %d rows\n" "Total rows" "$total_rows"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 fi
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 echo
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}Time Travel Query Complete!${NC}"
+if [ "$selected_snapshot_id" = "current" ]; then
+  echo -e "${GREEN}Query Complete!${NC}"
+else
+  echo -e "${GREEN}Time Travel Query Complete!${NC}"
+fi
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo
 echo -e "${YELLOW}💡 Additional Commands:${NC}"
 echo
-echo "View all data from this snapshot:"
-echo "  kubectl exec -n trino deployment/trino -- trino --output-format ALIGNED --execute \\"
-echo "    'SELECT ordertime, orderid, itemid, orderunits, address.city, address.state"
-echo "     FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\""
-echo "     FOR VERSION AS OF ${selected_snapshot_id}'"
-echo
-echo "Compare with current snapshot:"
-echo "  kubectl exec -n trino deployment/trino -- trino --output-format ALIGNED --execute \\"
-echo "    'SELECT \"snapshot\" as source, COUNT(*) as row_count"
-echo "     FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\""
-echo "     FOR VERSION AS OF ${selected_snapshot_id}"
-echo "     UNION ALL"
-echo "     SELECT \"current\" as source, COUNT(*) as row_count"
-echo "     FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\"'"
-echo
-echo "View snapshot metadata:"
-echo "  kubectl exec -n trino deployment/trino -- trino --output-format ALIGNED --execute \\"
-echo "    'SELECT * FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\\\$snapshots\""
-echo "     WHERE snapshot_id = ${selected_snapshot_id}'"
+
+if [ "$selected_snapshot_id" = "current" ]; then
+  echo "View all current data:"
+  echo "  kubectl exec -n trino deployment/trino -- trino --output-format ALIGNED --execute \\"
+  echo "    'SELECT ordertime, orderid, itemid, orderunits, address.city, address.state"
+  echo "     FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\"'"
+  echo
+  echo "View all snapshots:"
+  echo "  kubectl exec -n trino deployment/trino -- trino --output-format ALIGNED --execute \\"
+  echo "    'SELECT * FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\\\$snapshots\""
+  echo "     ORDER BY committed_at DESC'"
+else
+  echo "View all data from this snapshot:"
+  echo "  kubectl exec -n trino deployment/trino -- trino --output-format ALIGNED --execute \\"
+  echo "    'SELECT ordertime, orderid, itemid, orderunits, address.city, address.state"
+  echo "     FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\""
+  echo "     FOR VERSION AS OF ${selected_snapshot_id}'"
+  echo
+  echo "Compare with current snapshot:"
+  echo "  kubectl exec -n trino deployment/trino -- trino --output-format ALIGNED --execute \\"
+  echo "    'SELECT \"snapshot\" as source, COUNT(*) as row_count"
+  echo "     FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\""
+  echo "     FOR VERSION AS OF ${selected_snapshot_id}"
+  echo "     UNION ALL"
+  echo "     SELECT \"current\" as source, COUNT(*) as row_count"
+  echo "     FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\"'"
+  echo
+  echo "View snapshot metadata:"
+  echo "  kubectl exec -n trino deployment/trino -- trino --output-format ALIGNED --execute \\"
+  echo "    'SELECT * FROM ${CATALOG}.${SCHEMA}.\"${selected_table}\\\$snapshots\""
+  echo "     WHERE snapshot_id = ${selected_snapshot_id}'"
+fi
 echo
