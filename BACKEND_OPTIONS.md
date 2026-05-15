@@ -9,7 +9,7 @@ This demo supports **four backend storage options** for WarpStream Tableflow: **
 | **Deployment Location** | AWS Cloud | Azure Cloud | GCP Cloud | Kubernetes Cluster |
 | **Cloud Provider** | Amazon Web Services | Microsoft Azure | Google Cloud | Any (local) |
 | **Cloud Credentials** | Required (IAM) | Required (Az CLI) | Required (Service Acct) | Not Required |
-| **Trino Support** | ✅ Native S3 | ❌ No (azblob://) | ✅ Native GCS | ✅ S3A |
+| **Trino Support** | ✅ Native S3 | ✅ ABFSS | ✅ Native GCS | ✅ S3A |
 | **Setup Complexity** | Moderate | Moderate | Moderate | Simple |
 | **Best For** | Production (AWS) | Production (Azure) | Production (GCP) | Development, demos |
 | **Cost** | Pay-per-use | Pay-per-use | Pay-per-use | Free (cluster resources) |
@@ -239,6 +239,7 @@ Azure Data Lake Storage Gen2 (ADLS Gen2) is Microsoft's cloud-based object stora
 - **ADLS Gen2 Filesystem** - `tableflow` container
 - **WarpStream Cluster** - Tableflow cluster configured for Azure
 - **WarpStream Agent** - Configured with Azure credentials
+- **Trino Query Engine** - With ABFSS filesystem support
 
 ### Usage
 
@@ -255,11 +256,17 @@ export TABLEFLOW_BACKEND='azure'
 ### Configuration Details
 
 The WarpStream agent is configured with:
-- **Bucket URL**: `azblob://tableflow`
+- **Bucket URL**: `abfss://tableflow@<account>.dfs.core.windows.net/`
 - **Authentication**: Azure Storage Account access key
 - **Environment Variables**:
   - `AZURE_STORAGE_ACCOUNT`: Storage account name
   - `AZURE_STORAGE_KEY`: Access key (from Kubernetes secret)
+
+**Trino Configuration:**
+- Azure filesystem enabled (`fs.azure.enabled=true`)
+- ABFSS protocol support for ADLS Gen2
+- Authentication via access key
+- Credentials from Kubernetes secret
 
 ### Verifying Data
 
@@ -279,10 +286,23 @@ az storage fs file download \
   --file local-file
 ```
 
+### Query with Trino
+
+```bash
+# Show tables
+kubectl exec -n trino deployment/trino -- trino --execute \
+  'SHOW TABLES FROM iceberg.default'
+
+# Query orders
+kubectl exec -n trino deployment/trino -- trino --execute \
+  'SELECT COUNT(*) FROM iceberg.default."cp_cluster__datagen-orders"'
+```
+
 ### Pros
 - ✅ Production-ready and highly scalable
 - ✅ Built-in data durability and redundancy
 - ✅ Native Azure integration
+- ✅ **Trino query engine with ABFSS support**
 - ✅ Pay-per-use pricing model
 - ✅ Integrated with Azure security and compliance
 - ✅ Hierarchical namespace optimized for analytics
@@ -290,8 +310,6 @@ az storage fs file download \
 ### Cons
 - ❌ Requires Azure subscription and credentials
 - ❌ May incur cloud storage costs
-- ❌ **No Trino query engine support** (azblob:// URI incompatibility)
-- ❌ Limited OSS tool compatibility
 - ❌ Requires internet connectivity
 
 ## MinIO Backend (Local S3-Compatible Storage)
@@ -447,7 +465,7 @@ export TABLEFLOW_REGION='us-east-1'
 export TABLEFLOW_BACKEND='cloud'
 ```
 
-**Azure Production (ADLS Gen2, no Trino):**
+**Azure Production (ADLS Gen2 + Trino):**
 ```bash
 export CLOUD_PROVIDER='azure'
 export TABLEFLOW_REGION='eastus'
@@ -509,11 +527,14 @@ Data Flow: Kafka → WarpStream Agent → S3 → Trino (Native S3)
 │  │                  │   │         │                 │
 │  │ - Azure creds    │   │         │  ADLS Gen2      │
 │  └──────────────────┘   │         │  Storage Acct   │
-│                         │         │  (azblob://)    │
-└─────────────────────────┘         └─────────────────┘
+│                         │         │  (abfss://)     │
+│  ┌──────────────────┐   │         └────────┬────────┘
+│  │  Trino Engine    │───┼──────────────────┘
+│  │  (ABFSS)         │   │      Direct ABFSS access
+│  └──────────────────┘   │
+└─────────────────────────┘
 
-Note: No Trino support - azblob:// URIs incompatible with OSS query engines
-Data Flow: Kafka → WarpStream Agent → ADLS Gen2 (no query engine)
+Data Flow: Kafka → WarpStream Agent → ADLS Gen2 → Trino (ABFSS)
 ```
 
 ### GCP Cloud Storage Architecture
@@ -616,8 +637,7 @@ MINIO_CONSOLE_PORT              # Optional: MinIO console port (default: 9001)
 
 ```bash
 TRINO_UI_PORT                   # Optional: Trino UI port (default: 8080)
-# Trino automatically deployed for: AWS (cloud), GCP (cloud), MinIO
-# Trino NOT deployed for: Azure (cloud) - URI incompatibility
+# Trino automatically deployed for all backends: AWS, Azure, GCP, MinIO
 ```
 
 ## Troubleshooting
@@ -762,9 +782,9 @@ kubectl exec -n warpstream deployment/warpstream-agent -- \
   - ✅ Global availability and scalability
 
 - **Azure Production:**
-  - ✅ Use **Azure ADLS Gen2 backend**
+  - ✅ Use **Azure ADLS Gen2 backend** with Trino support
   - ✅ Native Azure integration and compliance
-  - ⚠️ No Trino support - consider if SQL analytics needed
+  - ✅ ABFSS protocol for optimal performance
   - ✅ Hierarchical namespace optimization
 
 - **GCP Production:**
@@ -782,7 +802,7 @@ kubectl exec -n warpstream deployment/warpstream-agent -- \
   
 - ✅ **Cloud backends** to showcase production architecture
   - **AWS S3** - Show native S3 with Trino
-  - **Azure ADLS Gen2** - Enterprise Azure integration (no Trino)
+  - **Azure ADLS Gen2** - Enterprise Azure integration with Trino (ABFSS)
   - **GCP GCS** - Show native GCS with Trino
   
 - 💡 **Consider your audience:**
@@ -792,9 +812,9 @@ kubectl exec -n warpstream deployment/warpstream-agent -- \
 
 ### Query Engine Requirements
 
-- ✅ **Need SQL analytics?** Choose AWS S3, GCP GCS, or MinIO
-- ❌ **Azure ADLS Gen2** does not support Trino (azblob:// incompatibility)
-- 📖 See [OSS_QUERY_ENGINES.md](OSS_QUERY_ENGINES.md) for technical details
+- ✅ **All backends support Trino** - AWS S3, Azure ADLS Gen2, GCP GCS, and MinIO
+- ✅ **Azure ABFSS support** - Native ADLS Gen2 integration for Trino
+- 📖 Each cloud provider uses optimized native filesystem support
 
 ## Additional Resources
 

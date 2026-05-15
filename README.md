@@ -1,6 +1,6 @@
 # WarpStream Tableflow Demo
 
-End-to-end multi-cloud demo of WarpStream Tableflow with Confluent Platform on Kubernetes. Deploy to **AWS, Azure, or GCP** with cloud-native storage or local MinIO. Includes **Trino query engine** for SQL analytics on Iceberg tables (AWS, GCP, MinIO).
+End-to-end multi-cloud demo of WarpStream Tableflow with Confluent Platform on Kubernetes. Deploy to **AWS, Azure, or GCP** with cloud-native storage or local MinIO. Includes **Trino query engine** for SQL analytics on Iceberg tables across all backends.
 
 ## Quick Links
 
@@ -14,7 +14,7 @@ End-to-end multi-cloud demo of WarpStream Tableflow with Confluent Platform on K
 
 **Cloud Providers Supported:**
 - ✅ **AWS** - S3 + Trino (native S3 filesystem)
-- ✅ **Azure** - ADLS Gen2 (no query engine - URI incompatibility)
+- ✅ **Azure** - ADLS Gen2 + Trino (ABFSS protocol)
 - ✅ **GCP** - Cloud Storage + Trino (native GCS filesystem)
 - ✅ **Any Provider** - MinIO (local Kubernetes storage)
 
@@ -22,7 +22,7 @@ End-to-end multi-cloud demo of WarpStream Tableflow with Confluent Platform on K
 - **Confluent Platform** (Kafka, Schema Registry, Connect, Control Center)
 - **WarpStream Tableflow** (Kafka-to-Iceberg transformation)
 - **Cloud Storage** (S3/ADLS Gen2/GCS) or **MinIO** (local)
-- **Trino Query Engine** (AWS, GCP, MinIO only)
+- **Trino Query Engine** (all backends supported)
 
 **Data Flow:**
 ```
@@ -35,7 +35,7 @@ Kafka Connect → Kafka Topic → WarpStream Tableflow → Iceberg Tables → Tr
 |-------|----------------|---------------|----------|
 | **AWS** | S3 (cloud) | ✅ Native S3 | Production (AWS) |
 | **AWS** | MinIO (local) | ✅ S3A | Development |
-| **Azure** | ADLS Gen2 (cloud) | ❌ No | Production (Azure-only) |
+| **Azure** | ADLS Gen2 (cloud) | ✅ ABFSS | Production (Azure) |
 | **Azure** | MinIO (local) | ✅ S3A | Development |
 | **GCP** | GCS (cloud) | ✅ Native GCS | Production (GCP) |
 | **GCP** | MinIO (local) | ✅ S3A | Development |
@@ -127,20 +127,17 @@ export TABLEFLOW_BACKEND='minio'  # Local storage
 
 ### Access UIs
 
-**With Trino (AWS, GCP, MinIO):**
+**All Backends (AWS, Azure, GCP, MinIO):**
 - Confluent Control Center: http://localhost:9021
 - Trino UI: http://localhost:8080
 - MinIO Console (if MinIO): http://localhost:9001 (minioadmin/minioadmin)
-
-**Azure (no Trino):**
-- Confluent Control Center: http://localhost:9021
 
 All UIs are automatically port-forwarded!
 
 ### Query Data
 
 ```bash
-# Show tables (works for AWS S3, GCP GCS, MinIO)
+# Show tables (works for all backends: AWS, Azure, GCP, MinIO)
 kubectl exec -n trino deployment/trino -- trino --execute \
   'SHOW TABLES FROM iceberg.default'
 
@@ -181,20 +178,18 @@ Choose between two backends:
 **Azure ADLS Gen2 (Production):**
 - ✅ Enterprise-grade scalability and security
 - ✅ Unlimited storage capacity
-- ❌ No OSS query engine support (URI incompatibility)
+- ✅ Trino query engine with ABFSS support
 
 See [BACKEND_OPTIONS.md](BACKEND_OPTIONS.md) for detailed comparison.
 
-### Query Engine (MinIO Only)
+### Query Engine (All Backends)
 
-**Trino** query engine automatically deployed with MinIO backend:
+**Trino** query engine automatically deployed with all backends:
 - SQL analytics on Iceberg tables
 - Interactive CLI and Web UI (<http://localhost:8080>)
 - Time travel queries via snapshot isolation
+- Native filesystem support for each cloud provider
 - See [ADVANCED.md](ADVANCED.md) for query examples
-
-**Why Trino works with MinIO but not Azure:**
-MinIO uses `s3://` URIs (S3-compatible), while Azure uses `azblob://` URIs that Trino/Hadoop cannot read. See [OSS_QUERY_ENGINES.md](OSS_QUERY_ENGINES.md) for technical details.
 
 ### Iceberg Time Travel
 

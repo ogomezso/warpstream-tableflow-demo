@@ -78,6 +78,7 @@ source "${SCRIPT_DIR}/scripts/startup/03d-aws.sh"
 source "${SCRIPT_DIR}/scripts/startup/03e-gcp.sh"
 source "${SCRIPT_DIR}/scripts/startup/03f-trino-aws.sh"
 source "${SCRIPT_DIR}/scripts/startup/03g-trino-gcp.sh"
+source "${SCRIPT_DIR}/scripts/startup/03h-trino-azure.sh"
 source "${SCRIPT_DIR}/scripts/startup/04-terraform.sh"
 source "${SCRIPT_DIR}/scripts/startup/05-warpstream-agent.sh"
 source "${SCRIPT_DIR}/scripts/startup/06-tableflow-pipeline.sh"
@@ -153,7 +154,7 @@ if [ "${TABLEFLOW_BACKEND}" = "cloud" ]; then
       run_step_trino_aws
       ;;
     azure)
-      # Note: No Trino for Azure - azblob:// URI incompatibility
+      run_step_trino_azure
       ;;
     gcp)
       run_step_trino_gcp
@@ -337,19 +338,49 @@ else
   echo -e "  📦 Azure Storage Console:     ${GREEN}https://portal.azure.com/#view/Microsoft_Azure_Storage/ContainerMenuBlade/~/overview/storageAccountId/%2Fsubscriptions%2F${AZURE_SUBSCRIPTION_ID}%2FresourceGroups%2F${AZURE_RESOURCE_GROUP}%2Fproviders%2FMicrosoft.Storage%2FstorageAccounts%2F${AZURE_STORAGE_ACCOUNT}/path/${TABLEFLOW_CONTAINER}/etag/%22${NC}"
   echo "     Browse Iceberg tables and Parquet files in Azure Storage"
   echo
+  echo -e "  🔍 Trino Query UI:            ${GREEN}http://localhost:${TRINO_UI_PORT}${NC}"
+  echo "     View query history and performance metrics"
+  echo
+  echo -e "${YELLOW}🧪 Test Trino Queries:${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  # Show available catalogs and tables"
+  echo "  kubectl exec -n trino deployment/trino -- trino --execute 'SHOW TABLES FROM iceberg.default'"
+  echo
+  echo "  # Count total orders"
+  echo "  kubectl exec -n trino deployment/trino -- trino --execute \\"
+  echo "    'SELECT COUNT(*) FROM iceberg.default.\"cp_cluster__datagen-orders\"'"
+  echo
+  echo "  # View sample orders"
+  echo "  kubectl exec -n trino deployment/trino -- trino --execute \\"
+  echo "    'SELECT orderid, itemid, orderunits, address.city, address.state FROM iceberg.default.\"cp_cluster__datagen-orders\" LIMIT 10'"
+  echo
+  echo "  # Top states by order count"
+  echo "  kubectl exec -n trino deployment/trino -- trino --execute \\"
+  echo "    'SELECT address.state, COUNT(*) as orders FROM iceberg.default.\"cp_cluster__datagen-orders\" GROUP BY address.state ORDER BY orders DESC LIMIT 5'"
+  echo
+  echo "  # Interactive Trino CLI"
+  echo "  kubectl exec -it -n trino deployment/trino -- trino"
+  echo
+  echo -e "${YELLOW}⏱️  Time Travel Queries:${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  # Unified query interface (auto-detects query engine)"
+  echo "  ./demo-query.sh time-travel"
+  echo
+  echo "  # Interactive menu"
+  echo "  ./demo-query.sh"
+  echo
   echo -e "${YELLOW}📝 Configuration:${NC}"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo "  Backend:              Azure ADLS Gen2"
-  echo "  Azure Region:         ${AZURE_REGION:-[not set]}"
+  echo "  Azure Region:         ${TABLEFLOW_REGION:-[not set]}"
   echo "  Storage account:      ${AZURE_STORAGE_ACCOUNT:-[not set]}"
   echo "  Container:            ${TABLEFLOW_CONTAINER:-[not set]}"
   echo "  Resource group:       ${AZURE_RESOURCE_GROUP:-[not set]}"
+  echo "  Trino filesystem:     Native Azure (ABFSS)"
   echo "  WarpStream VCI:       ${WARPSTREAM_VIRTUAL_CLUSTER_ID:-[not set]}"
   echo "  Confluent namespace:  ${CONFLUENT_NAMESPACE}"
   echo "  WarpStream namespace: ${WARPSTREAM_NAMESPACE}"
-  echo
-  echo -e "${YELLOW}Note:${NC} Trino query engine is only available with AWS, GCP, and MinIO backends."
-  echo "      Azure backend uses azblob:// URIs which are not compatible with Trino/Hadoop."
+  echo "  Trino namespace:      trino"
 fi
 echo
 

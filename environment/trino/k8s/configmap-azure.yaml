@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trino-config
+  namespace: trino
+  labels:
+    app: trino
+data:
+  config.properties: |
+    coordinator=true
+    node-scheduler.include-coordinator=true
+    http-server.http.port=8080
+    discovery.uri=http://localhost:8080
+
+  jvm.config: |
+    -server
+    -Xmx2G
+    -XX:+UseG1GC
+    -XX:G1HeapRegionSize=32M
+    -XX:+UseGCOverheadLimit
+    -XX:+ExplicitGCInvokesConcurrent
+    -XX:+HeapDumpOnOutOfMemoryError
+    -XX:+ExitOnOutOfMemoryError
+    -Djdk.attach.allowAttachSelf=true
+
+  node.properties: |
+    node.environment=production
+    node.id=trino-node-1
+    node.data-dir=/var/trino/data
+
+  iceberg.properties: |
+    connector.name=iceberg
+    iceberg.catalog.type=rest
+    iceberg.rest-catalog.uri=http://warpstream-iceberg-proxy.trino.svc.cluster.local:8080/catalogs/iceberg/<VCI>
+    iceberg.rest-catalog.vended-credentials-enabled=true
+    fs.azure.enabled=true
+    azure.auth-type=ACCESS_KEY
+    azure.access-key=<AZURE_STORAGE_KEY>

@@ -71,7 +71,7 @@ prompt_cloud_provider() {
   echo
   echo "  2) Azure (Microsoft Azure)"
   echo "     - ADLS Gen2 storage backend"
-  echo "     - Query engine NOT supported (URI incompatibility)"
+  echo "     - Trino query engine supported"
   echo
   echo "  3) GCP (Google Cloud Platform)"
   echo "     - Google Cloud Storage (GCS) backend"
@@ -198,7 +198,7 @@ prompt_tableflow_backend() {
     azure)
       echo "  1) Azure ADLS Gen2 (Cloud Storage)"
       echo "     - Azure Data Lake Storage Gen2 in same region"
-      echo "     - Query engine NOT supported (azblob:// incompatibility)"
+      echo "     - Trino query engine supported (ABFSS protocol)"
       echo "     - Production-ready"
       ;;
     gcp)
