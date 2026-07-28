@@ -9,7 +9,7 @@ serviceAccount:
 
 # Internal object storage used by the Tableflow virtual cluster
 config:
-  bucketURL: azblob://<TABLEFLOW_CONTAINER>
+  bucketURL: azblob://<TABLEFLOW_CONTAINER>?storage_account=<AZURE_STORAGE_ACCOUNT>
   virtualClusterID: <TABLEFLOW_VIRTUAL_CLUSTER_ID>
   region: <WARPSTREAM_CONTROL_PLANE_REGION>
   agentKey: <WARPSTREAM_AGENT_KEY>
@@ -20,6 +20,11 @@ extraEnv:
 
   - name: WARPSTREAM_REGION
     value: "<WARPSTREAM_CONTROL_PLANE_REGION>"
+
+  # For local/non-cloud deployments, explicitly set the availability zone
+  # This prevents the recurring "failed to determine availability zone" error
+  - name: WARPSTREAM_AVAILABILITY_ZONE
+    value: "local-k8s-cluster"
 
   # Azure auth (for a quick PoC using access keys; prefer workload identity in real env)
   - name: AZURE_STORAGE_ACCOUNT
