@@ -37,3 +37,4 @@ environment/warpstream/tableflow-pipeline/orders-tableflow-pipeline.yaml
 
 # Platform-specific binaries
 darwin_arm64/
+.bob/
