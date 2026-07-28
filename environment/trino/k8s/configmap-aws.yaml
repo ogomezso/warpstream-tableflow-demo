@@ -32,7 +32,7 @@ data:
     connector.name=iceberg
     iceberg.catalog.type=rest
     iceberg.rest-catalog.uri=http://warpstream-iceberg-proxy.trino.svc.cluster.local:8080/catalogs/iceberg/<VCI>
-    iceberg.rest-catalog.vended-credentials-enabled=true
+    iceberg.rest-catalog.vended-credentials-enabled=false
     fs.native-s3.enabled=true
     s3.region=<AWS_REGION>
     s3.endpoint=https://s3.<AWS_REGION>.amazonaws.com

@@ -10,6 +10,9 @@ data:
     }
 
     http {
+        # Force IPv4-only DNS resolution — the cluster has no IPv6 route
+        resolver 8.8.8.8 ipv6=off valid=30s;
+
         server {
             listen 8080;
 
